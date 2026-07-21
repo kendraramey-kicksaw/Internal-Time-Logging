@@ -2,32 +2,69 @@
 
 import { useMemo, useState } from "react";
 
-type ProjectKey = "client" | "internal";
+type Project = {
+  id: string;
+  label: string;
+};
 
 type TimeEntry = {
   id: string;
   date: string;
-  projectKey: ProjectKey;
   projectId: string;
-  projectName: string;
+  projectLabel: string;
   hours: number;
-  billable: true;
+  billable: boolean;
   activityType: string;
   notes: string;
-  source: string;
+  source: "Calendar" | "Manual";
 };
 
-const CLIENT_PROJECT = {
-  key: "client" as const,
+type SalesforceTimeEntry = Omit<TimeEntry, "source"> & {
+  recordId: string;
+  category: string;
+  type: string;
+};
+
+const monthStart = "2026-07-01";
+const monthEnd = "2026-07-21";
+const defaultSuggestionStart = "2026-07-11";
+const defaultSuggestionEnd = "2026-07-21";
+
+const CRISIS_PROJECT: Project = {
   id: "a0uQh000004SaXhIAK",
-  name: "Project Work",
+  label: "Crisis24 - OnSolve Migration - (SOPS)",
 };
 
-const INTERNAL_PROJECT = {
-  key: "internal" as const,
+const INTERNAL_PROJECT: Project = {
   id: "a0uQh000007aLujIAE",
-  name: "Kicksaw - Internal Time Tracking",
+  label: "Kicksaw - Internal Time Tracking",
 };
+
+const projectOptions: Project[] = [
+  CRISIS_PROJECT,
+  INTERNAL_PROJECT,
+  { id: "a0uQh000005vgm1IAA", label: "Crisis24 - OnSolve Migration - (EOPS)" },
+  { id: "a0uQh000007ZQYHIA4", label: "Crisis24 - Agentforce POC (SOPS)" },
+  { id: "a0uQh000005gx0nIAA", label: "Crisis24 - GSOC/PSG Portal Project (EOPS)" },
+  { id: "a0uQh000006hdqfIAA", label: "Crisis24 - OnSolve Workato Support" },
+  { id: "a0uQh000005y8UTIAY", label: "Kicksaw - Marketing Support" },
+  { id: "a0uQh000008VNTZIA4", label: "340B Direct (DBA Zion's Financial Bank) - Document Package - COPS" },
+  { id: "a0uQh000008VN5NIAW", label: "340B Direct (DBA Zion's Financial Bank) - Managed Services COPS" },
+  { id: "a0uQh000008q4R7IAI", label: "Aardvark Compare (AARDY): Agentforce Jumpstart (AOD)" },
+  { id: "a0uQh000009GvhtIAC", label: "Abby Care: Maps Jumpstart (SOPS)" },
+  { id: "a0uQh000007cMjUIAU", label: "All About You Adult Foster Care - Managed Services (AOD)" },
+  { id: "a0uQh000008saLFIAY", label: "Allen Edwin Homes: Agentforce Jumpstart (AOD)" },
+  { id: "a0uQh000008mx1BIAQ", label: "Altus: Revenue Cloud Enhancement - Discovery [SOPS]" },
+  { id: "a0uQh000009Gu97IAC", label: "Aluris: Jumpstart (SOPS)" },
+  { id: "a0uQh000009CA3FIAW", label: "Amstar - SOPS" },
+  { id: "a0uQh0000089MPhIAM", label: "Analysis Group: Consulting" },
+  { id: "a0uQh0000097SC5IAM", label: "Sight Sciences - Managed Services - July 2026" },
+  { id: "a0uQh000008MrYvIAK", label: "Sault College - Managed Services" },
+  { id: "a0uQh000008grOHIAY", label: "SBMA Benefits - Managed Services" },
+  { id: "a0uQh000007cMkaIAE", label: "Valor Technical Cleaning - Managed Services (AOD)" },
+  { id: "a0uQh000007oL3eIAE", label: "Vapi - Managed Services (AOD)" },
+  { id: "a0uQh000008HBLpIAO", label: "Vidal Construction - MS" },
+].sort((a, b) => a.label.localeCompare(b.label));
 
 const activityTypes = [
   "Meeting",
@@ -46,192 +83,127 @@ const activityTypes = [
   "Travel",
 ];
 
-const seedEntries: TimeEntry[] = [
-  entry("2026-07-01", "internal", 13, "PTO", "Canada Day", "Calendar"),
-  entry("2026-07-01", "client", 2, "Coding and Configuration", "PC Deployments", "Calendar"),
-  entry(
-    "2026-07-02",
-    "client",
-    2.5,
-    "Meeting",
-    "OnSolve | Kicksaw - INTERNAL - Daily Stand-Up, OnSolve | Crisis24 | Kicksaw - Tech Team Daily UAT Triage, OnSolve Tech Team | Kicksaw - Metrics Review",
-    "Calendar",
-  ),
-  entry(
-    "2026-07-02",
-    "client",
-    5.5,
-    "Coding and Configuration",
-    "Metrics fun, UAT, Closed Opp Flow",
-    "Calendar",
-  ),
-  entry(
-    "2026-07-06",
-    "client",
-    3.5,
-    "Meeting",
-    "Ginny Chat, INTERNAL OnSolve | Crisis24 - Weekly Team Planning, OnSolve | Crisis24 | Kicksaw - Tech Team Daily UAT Triage, OnSolve | Kicsaw Metrics Follow-Up",
-    "Calendar",
-  ),
-  entry("2026-07-06", "client", 5.5, "Coding and Configuration", "Deployments", "Calendar"),
-  entry(
-    "2026-07-07",
-    "client",
-    2,
-    "Meeting",
-    "OnSolve | Kicksaw - INTERNAL - Daily Stand-Up, OnSolve | Crisis24 | Kicksaw - Tech Team Daily UAT Triage, Closing Process Flow, CPQ Migration Challenges/Changes",
-    "Calendar",
-  ),
-  entry(
-    "2026-07-07",
-    "client",
-    6.25,
-    "Coding and Configuration",
-    "Tickets, Migration Price Validation, Data fix",
-    "Calendar",
-  ),
-  entry(
-    "2026-07-08",
-    "client",
-    3.5,
-    "Meeting",
-    "OnSolve | Kicksaw - INTERNAL - Daily Stand-Up, OnSolve Tech Team | Kicksaw - Metrics Review, OnSolve | Crisis24 | Kicksaw - Tech Team Daily UAT Triage, OS Data Fix Review",
-    "Calendar",
-  ),
-  entry(
-    "2026-07-08",
-    "client",
-    7,
-    "Coding and Configuration",
-    "Opp Line Migration Prep, Deployments, OS Data fix, OS Data Fix Party",
-    "Calendar",
-  ),
-  entry(
-    "2026-07-08",
-    "internal",
-    0.5,
-    "People and Team Activities",
-    "Kendra / DJ (Bi-weekly, 1:1, until 8/10)",
-    "Calendar",
-  ),
-  entry(
-    "2026-07-09",
-    "client",
-    2,
-    "Meeting",
-    "OnSolve | Crisis24 | Kicksaw - Tech Team Daily UAT Triage, OS Data Fix Debrief",
-    "Calendar",
-  ),
-  entry("2026-07-09", "client", 5, "Coding and Configuration", "Deployments, OS Data Audit", "Calendar"),
-  entry("2026-07-09", "internal", 1, "PTO", "Out of office", "Calendar"),
-  entry(
-    "2026-07-10",
-    "client",
-    1.5,
-    "Meeting",
-    "OnSolve | Crisis24 | Kicksaw - Tech Team Daily UAT Triage, Kendra / Ben",
-    "Calendar",
-  ),
-  entry(
-    "2026-07-10",
-    "client",
-    5.75,
-    "Coding and Configuration",
-    "Metrics & things, Deployments to PC",
-    "Calendar",
-  ),
-  entry("2026-07-10", "internal", 0.75, "People and Team Activities", "Delivery AI Lounge (Optional Series)", "Calendar"),
-  entry("2026-07-10", "internal", 1, "PTO", "Out of office", "Calendar"),
-  entry(
-    "2026-07-13",
-    "client",
-    1.5,
-    "Meeting",
-    "INTERNAL OnSolve | Crisis24 - Weekly Team Planning, OnSolve | Crisis24 | Kicksaw - Tech Team Daily UAT Triage",
-    "Calendar",
-  ),
-  entry("2026-07-13", "internal", 16, "PTO", "Out of office", "Calendar"),
-  entry(
-    "2026-07-14",
-    "client",
-    1,
-    "Meeting",
-    "OnSolve | Kicksaw - INTERNAL - Daily Stand-Up, OnSolve | Crisis24 | Kicksaw - Tech Team Daily UAT Triage",
-    "Calendar",
-  ),
-  entry("2026-07-14", "internal", 24, "PTO", "Out of office", "Calendar"),
-  entry(
-    "2026-07-15",
-    "client",
-    1,
-    "Meeting",
-    "OnSolve | Kicksaw - INTERNAL - Daily Stand-Up, OnSolve | Crisis24 | Kicksaw - Tech Team Daily UAT Triage",
-    "Calendar",
-  ),
-  entry("2026-07-15", "internal", 24, "PTO", "Out of office", "Calendar"),
-  entry(
-    "2026-07-16",
-    "client",
-    1,
-    "Meeting",
-    "OnSolve | Kicksaw - INTERNAL - Daily Stand-Up, OnSolve | Crisis24 | Kicksaw - Tech Team Daily UAT Triage",
-    "Calendar",
-  ),
-  entry("2026-07-16", "internal", 24, "PTO", "Out of office", "Calendar"),
-  entry(
-    "2026-07-17",
-    "client",
-    1,
-    "Meeting",
-    "OnSolve | Kicksaw - INTERNAL - Daily Stand-Up, OnSolve | Crisis24 | Kicksaw - Tech Team Daily UAT Triage",
-    "Calendar",
-  ),
-  entry("2026-07-17", "internal", 1, "People and Team Activities", "July Delivery All Hands", "Calendar"),
-  entry("2026-07-17", "internal", 20, "PTO", "Out of office", "Calendar"),
-  entry(
+const salesforceRows: SalesforceTimeEntry[] = [
+  sf("a1JQh00000I95R8MAJ", "2026-07-10", CRISIS_PROJECT, 5.25, true, "Coding and Configuration", "", "", "Engagement Fee"),
+  sf("a1JQh00000I95R7MAJ", "2026-07-10", CRISIS_PROJECT, 2, true, "Meeting", "", "", "Engagement Fee"),
+  sf("a1JQh00000I95R9MAJ", "2026-07-10", INTERNAL_PROJECT, 0.5, false, "People and Team Activities", "", "Internal", "Internal"),
+  sf("a1JQh00000I8Nl4MAF", "2026-07-09", CRISIS_PROJECT, 5.5, true, "Coding and Configuration", "", "", "Engagement Fee"),
+  sf("a1JQh00000I8Nl3MAF", "2026-07-09", CRISIS_PROJECT, 2, true, "Meeting", "", "", "Engagement Fee"),
+  sf("a1JQh00000I8NI3MAN", "2026-07-08", CRISIS_PROJECT, 5, true, "Coding and Configuration", "", "", "Engagement Fee"),
+  sf("a1JQh00000I8NI2MAN", "2026-07-08", CRISIS_PROJECT, 5.5, true, "Meeting", "", "", "Engagement Fee"),
+  sf("a1JQh00000I8NI4MAN", "2026-07-08", INTERNAL_PROJECT, 0.5, false, "People and Team Activities", "", "Internal", "Internal"),
+  sf("a1JQh00000I8NTKMA3", "2026-07-07", CRISIS_PROJECT, 6.25, true, "Coding and Configuration", "", "", "Engagement Fee"),
+  sf("a1JQh00000I8NTJMA3", "2026-07-07", CRISIS_PROJECT, 2, true, "Meeting", "", "", "Engagement Fee"),
+  sf("a1JQh00000I8NJeMAN", "2026-07-06", CRISIS_PROJECT, 5.5, true, "Coding and Configuration", "", "", "Engagement Fee"),
+  sf("a1JQh00000I8NJdMAN", "2026-07-06", CRISIS_PROJECT, 3.5, true, "Meeting", "", "", "Engagement Fee"),
+  sf("a1JQh00000Hzhj0MAB", "2026-07-02", CRISIS_PROJECT, 4, true, "Coding and Configuration", "", "", "Engagement Fee"),
+  sf("a1JQh00000HzhizMAB", "2026-07-02", CRISIS_PROJECT, 4, true, "Meeting", "", "", "Engagement Fee"),
+  sf("a1JQh00000HzhnpMAB", "2026-07-01", CRISIS_PROJECT, 2, true, "Coding and Configuration", "", "", "Engagement Fee"),
+].sort(sortSalesforce);
+
+const calendarSuggestionSeed: TimeEntry[] = [
+  suggested("2026-07-13", INTERNAL_PROJECT, 16, false, "PTO", "Out of office"),
+  suggested("2026-07-14", INTERNAL_PROJECT, 24, false, "PTO", "Out of office"),
+  suggested("2026-07-15", INTERNAL_PROJECT, 24, false, "PTO", "Out of office"),
+  suggested("2026-07-16", INTERNAL_PROJECT, 24, false, "PTO", "Out of office"),
+  suggested("2026-07-17", INTERNAL_PROJECT, 20, false, "PTO", "Out of office"),
+  suggested(
     "2026-07-20",
-    "client",
+    CRISIS_PROJECT,
     3,
+    true,
     "Meeting",
     "INTERNAL OnSolve | Crisis24 - Weekly Team Planning, OnSolve | Crisis24 - Data Migration Daily Check-In, OnSolve | Crisis24 | Kicksaw - Tech Team Daily UAT Triage, Kayleigh / Ben - App demo, Ben/Kendra - C24 Migration",
-    "Calendar",
   ),
-  entry(
+  suggested(
     "2026-07-21",
-    "client",
+    CRISIS_PROJECT,
     1,
+    true,
     "Meeting",
     "OnSolve | Kicksaw - INTERNAL - Daily Stand-Up, OnSolve | Crisis24 | Kicksaw - Tech Team Daily UAT Triage",
-    "Calendar",
   ),
 ];
 
-function entry(
+function sf(
+  recordId: string,
   date: string,
-  projectKey: ProjectKey,
+  project: Project,
   hours: number,
+  billable: boolean,
   activityType: string,
   notes: string,
-  source: string,
-): TimeEntry {
-  const project = projectKey === "client" ? CLIENT_PROJECT : INTERNAL_PROJECT;
+  category: string,
+  type: string,
+): SalesforceTimeEntry {
+  return {
+    id: recordId,
+    recordId,
+    date,
+    projectId: project.id,
+    projectLabel: project.label,
+    hours,
+    billable,
+    activityType,
+    notes,
+    category,
+    type,
+  };
+}
 
+function suggested(
+  date: string,
+  project: Project,
+  hours: number,
+  billable: boolean,
+  activityType: string,
+  notes: string,
+): TimeEntry {
   return {
     id: `${date}-${activityType}-${notes}`.replace(/[^a-z0-9]+/gi, "-").toLowerCase(),
     date,
-    projectKey,
     projectId: project.id,
-    projectName: project.name,
+    projectLabel: project.label,
     hours,
-    billable: true,
+    billable,
     activityType,
     notes,
-    source,
+    source: "Calendar",
   };
 }
 
 function blankEntry(): TimeEntry {
-  return entry(new Date().toISOString().slice(0, 10), "client", 0.25, "Meeting", "", "Manual");
+  return {
+    id: "manual-draft",
+    date: defaultSuggestionEnd,
+    projectId: CRISIS_PROJECT.id,
+    projectLabel: CRISIS_PROJECT.label,
+    hours: 0.25,
+    billable: true,
+    activityType: "Meeting",
+    notes: "",
+    source: "Manual",
+  };
+}
+
+function sortSuggested(a: TimeEntry, b: TimeEntry) {
+  return (
+    a.date.localeCompare(b.date) ||
+    a.projectLabel.localeCompare(b.projectLabel) ||
+    a.activityType.localeCompare(b.activityType)
+  );
+}
+
+function sortSalesforce(a: SalesforceTimeEntry, b: SalesforceTimeEntry) {
+  return (
+    b.date.localeCompare(a.date) ||
+    a.projectLabel.localeCompare(b.projectLabel) ||
+    a.activityType.localeCompare(b.activityType)
+  );
+}
+
+function inRange(entry: { date: string }, startDate: string, endDate: string) {
+  return entry.date >= startDate && entry.date <= endDate;
 }
 
 function formatHours(hours: number) {
@@ -241,320 +213,308 @@ function formatHours(hours: number) {
   }).format(hours);
 }
 
-function toCsv(entries: TimeEntry[]) {
-  const rows = [
-    ["Date", "Project", "Hours", "Billable", "Activity Type", "Notes"],
-    ...entries.map((entryRow) => [
-      entryRow.date,
-      entryRow.projectId,
-      entryRow.hours.toString(),
-      "TRUE",
-      entryRow.activityType,
-      entryRow.notes,
-    ]),
-  ];
-
-  return rows
-    .map((row) =>
-      row
-        .map((cell) => {
-          const text = String(cell);
-          return /[",\n]/.test(text) ? `"${text.replaceAll('"', '""')}"` : text;
-        })
-        .join(","),
-    )
-    .join("\n");
+function projectForLabel(label: string) {
+  return projectOptions.find((project) => project.label === label);
 }
 
 function toSalesforcePayload(entries: TimeEntry[]) {
-  return entries.map((entryRow) => ({
+  return entries.map((entry) => ({
     attributes: { type: "TASKRAY__trTaskTime__c" },
-    TASKRAY__Date__c: entryRow.date,
-    TASKRAY__Project__c: entryRow.projectId,
-    TASKRAY__Hours__c: Number(entryRow.hours.toFixed(2)),
-    TASKRAY__Billable__c: true,
-    Activity_Type__c: entryRow.activityType,
-    TASKRAY__Notes__c: entryRow.notes,
+    TASKRAY__Date__c: entry.date,
+    TASKRAY__Project__c: entry.projectId,
+    TASKRAY__Hours__c: Number(entry.hours.toFixed(2)),
+    TASKRAY__Billable__c: entry.billable,
+    Activity_Type__c: entry.activityType,
+    TASKRAY__Notes__c: entry.notes,
   }));
 }
 
+function ProjectLookup({
+  label,
+  value,
+  onChange,
+}: {
+  label: string;
+  value: string;
+  onChange: (project: Project) => void;
+}) {
+  return (
+    <label>
+      {label}
+      <input
+        list="project-options"
+        value={value}
+        onChange={(event) => {
+          const nextLabel = event.target.value;
+          const selectedProject = projectForLabel(nextLabel);
+          onChange(selectedProject ?? { id: "", label: nextLabel });
+        }}
+        placeholder="Start typing a project name"
+      />
+    </label>
+  );
+}
+
 export default function Home() {
-  const [entries, setEntries] = useState(seedEntries);
-  const [draft, setDraft] = useState(blankEntry());
-  const [filter, setFilter] = useState("all");
+  const [suggestionStart, setSuggestionStart] = useState(defaultSuggestionStart);
+  const [suggestionEnd, setSuggestionEnd] = useState(defaultSuggestionEnd);
+  const [salesforceStart, setSalesforceStart] = useState(monthStart);
+  const [salesforceEnd, setSalesforceEnd] = useState("2026-07-31");
+  const [suggestions, setSuggestions] = useState(calendarSuggestionSeed);
+  const [manualDraft, setManualDraft] = useState(blankEntry());
 
-  const visibleEntries = useMemo(() => {
-    if (filter === "all") {
-      return entries;
-    }
+  const filteredSuggestions = useMemo(
+    () => suggestions.filter((entry) => inRange(entry, suggestionStart, suggestionEnd)).sort(sortSuggested),
+    [suggestions, suggestionEnd, suggestionStart],
+  );
 
-    return entries.filter((entryRow) => entryRow.activityType === filter);
-  }, [entries, filter]);
+  const filteredSalesforceRows = useMemo(
+    () => salesforceRows.filter((entry) => inRange(entry, salesforceStart, salesforceEnd)).sort(sortSalesforce),
+    [salesforceEnd, salesforceStart],
+  );
 
   const totals = useMemo(() => {
-    const billableHours = entries.reduce((sum, entryRow) => sum + entryRow.hours, 0);
-    const clientHours = entries
-      .filter((entryRow) => entryRow.projectKey === "client")
-      .reduce((sum, entryRow) => sum + entryRow.hours, 0);
-    const internalHours = billableHours - clientHours;
-    const reviewRows = entries.filter((entryRow) => entryRow.hours > 12).length;
+    const suggestedHours = filteredSuggestions.reduce((sum, entry) => sum + entry.hours, 0);
+    const salesforceHours = filteredSalesforceRows.reduce((sum, entry) => sum + entry.hours, 0);
+    const flaggedSuggestions = filteredSuggestions.filter((entry) => entry.hours > 12 || !entry.projectId).length;
+    const lastSalesforceDate = salesforceRows.reduce(
+      (latest, entry) => (entry.date > latest ? entry.date : latest),
+      "",
+    );
 
-    return { billableHours, clientHours, internalHours, reviewRows };
-  }, [entries]);
+    return { suggestedHours, salesforceHours, flaggedSuggestions, lastSalesforceDate };
+  }, [filteredSalesforceRows, filteredSuggestions]);
 
-  function updateEntry(id: string, updates: Partial<TimeEntry>) {
-    setEntries((current) =>
-      current.map((entryRow) => {
-        if (entryRow.id !== id) {
-          return entryRow;
-        }
-
-        const next = { ...entryRow, ...updates };
-        if (updates.projectKey) {
-          const project = updates.projectKey === "client" ? CLIENT_PROJECT : INTERNAL_PROJECT;
-          next.projectId = project.id;
-          next.projectName = project.name;
-        }
-
-        return next;
-      }),
+  function updateSuggestion(id: string, updates: Partial<TimeEntry>) {
+    setSuggestions((current) =>
+      current.map((entry) => (entry.id === id ? { ...entry, ...updates } : entry)),
     );
   }
 
   function addManualEntry() {
-    const project = draft.projectKey === "client" ? CLIENT_PROJECT : INTERNAL_PROJECT;
-    setEntries((current) => [
-      ...current,
-      {
-        ...draft,
-        id: `manual-${crypto.randomUUID()}`,
-        projectId: project.id,
-        projectName: project.name,
-        billable: true,
-        source: "Manual",
-      },
-    ]);
-    setDraft(blankEntry());
-  }
-
-  function duplicateEntry(entryRow: TimeEntry) {
-    setEntries((current) => [
-      ...current,
-      { ...entryRow, id: `copy-${crypto.randomUUID()}`, source: "Manual copy" },
-    ]);
+    setSuggestions((current) =>
+      [
+        ...current,
+        {
+          ...manualDraft,
+          id: `manual-${crypto.randomUUID()}`,
+          source: "Manual",
+        },
+      ].sort(sortSuggested),
+    );
+    setManualDraft(blankEntry());
   }
 
   function copyPayload() {
-    navigator.clipboard.writeText(JSON.stringify(toSalesforcePayload(entries), null, 2));
-  }
-
-  function downloadCsv() {
-    const blob = new Blob([toCsv(entries)], { type: "text/csv;charset=utf-8" });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement("a");
-    link.href = url;
-    link.download = "july-time-entries.csv";
-    link.click();
-    URL.revokeObjectURL(url);
+    navigator.clipboard.writeText(JSON.stringify(toSalesforcePayload(filteredSuggestions), null, 2));
   }
 
   return (
     <main className="shell">
+      <datalist id="project-options">
+        {projectOptions.map((project) => (
+          <option key={project.id} value={project.label} />
+        ))}
+      </datalist>
       <header className="topbar">
         <div>
-          <p className="eyebrow">KicksawProd review workspace</p>
+          <p className="eyebrow">Month to date</p>
           <h1>Calendar Time Entries</h1>
           <p className="subtle">
-            Seeded from Google Calendar for July 1-21, 2026. Declined events,
-            transparent Home blocks, and Focus Time are excluded.
+            Review Salesforce time already entered, then tune calendar-suggested rows for the dates
+            after the latest TaskRay Time record.
           </p>
         </div>
-        <div className="actions">
-          <button type="button" onClick={() => setEntries(seedEntries)}>
-            Reset
-          </button>
-          <button type="button" onClick={downloadCsv}>
-            Export CSV
-          </button>
-          <button type="button" className="primary" onClick={copyPayload}>
-            Copy Salesforce Payload
-          </button>
-        </div>
+        <button type="button" className="primary" onClick={copyPayload}>
+          Copy Salesforce Payload
+        </button>
       </header>
 
-      <section className="metrics" aria-label="Totals">
+      <section className="metrics" aria-label="Month to date totals">
         <div>
-          <span>Total Hours</span>
-          <strong>{formatHours(totals.billableHours)}</strong>
+          <span>Latest Salesforce Entry</span>
+          <strong>{totals.lastSalesforceDate}</strong>
         </div>
         <div>
-          <span>Project Work</span>
-          <strong>{formatHours(totals.clientHours)}</strong>
+          <span>Suggested Hours</span>
+          <strong>{formatHours(totals.suggestedHours)}</strong>
         </div>
         <div>
-          <span>Internal / PTO</span>
-          <strong>{formatHours(totals.internalHours)}</strong>
+          <span>Salesforce Hours</span>
+          <strong>{formatHours(totals.salesforceHours)}</strong>
         </div>
-        <div className={totals.reviewRows ? "needs-review" : ""}>
+        <div className={totals.flaggedSuggestions ? "needs-review" : ""}>
           <span>Rows To Review</span>
-          <strong>{totals.reviewRows}</strong>
+          <strong>{totals.flaggedSuggestions}</strong>
         </div>
       </section>
 
-      <section className="toolbar" aria-label="Table controls">
-        <label>
-          Activity
-          <select value={filter} onChange={(event) => setFilter(event.target.value)}>
-            <option value="all">All activity types</option>
-            {activityTypes.map((type) => (
-              <option key={type} value={type}>
-                {type}
-              </option>
-            ))}
-          </select>
-        </label>
-        <p>
-          Multi-day PTO rows over 12 hours are marked for review because the
-          source calendar block spans overnight.
+      <section className="panel">
+        <div className="section-heading">
+          <div>
+            <p className="eyebrow">Table 1</p>
+            <h2>Suggested Time Entries</h2>
+          </div>
+          <div className="date-filters">
+            <label>
+              Start
+              <input
+                type="date"
+                value={suggestionStart}
+                onChange={(event) => setSuggestionStart(event.target.value)}
+              />
+            </label>
+            <label>
+              End
+              <input
+                type="date"
+                value={suggestionEnd}
+                onChange={(event) => setSuggestionEnd(event.target.value)}
+              />
+            </label>
+          </div>
+        </div>
+        <p className="table-note">
+          Default starts the day after the last Salesforce entry. Meetings that overlapped Out of
+          Office blocks were excluded from the suggestion set.
         </p>
-      </section>
-
-      <section className="table-wrap" aria-label="Editable time entries">
-        <table>
-          <thead>
-            <tr>
-              <th>Date</th>
-              <th>Project</th>
-              <th>Hours</th>
-              <th>Billable</th>
-              <th>Activity Type</th>
-              <th>Notes</th>
-              <th>Actions</th>
-            </tr>
-          </thead>
-          <tbody>
-            {visibleEntries.map((entryRow) => (
-              <tr key={entryRow.id} className={entryRow.hours > 12 ? "review-row" : ""}>
-                <td>
-                  <input
-                    type="date"
-                    value={entryRow.date}
-                    onChange={(event) => updateEntry(entryRow.id, { date: event.target.value })}
-                  />
-                </td>
-                <td>
-                  <select
-                    value={entryRow.projectKey}
-                    onChange={(event) =>
-                      updateEntry(entryRow.id, { projectKey: event.target.value as ProjectKey })
-                    }
-                  >
-                    <option value="client">{CLIENT_PROJECT.id}</option>
-                    <option value="internal">{INTERNAL_PROJECT.id}</option>
-                  </select>
-                </td>
-                <td>
-                  <input
-                    className="hours"
-                    type="number"
-                    min="0"
-                    step="0.25"
-                    value={entryRow.hours}
-                    onChange={(event) =>
-                      updateEntry(entryRow.id, { hours: Number(event.target.value) })
-                    }
-                  />
-                </td>
-                <td>
-                  <span className="pill">True</span>
-                </td>
-                <td>
-                  <select
-                    value={entryRow.activityType}
-                    onChange={(event) =>
-                      updateEntry(entryRow.id, { activityType: event.target.value })
-                    }
-                  >
-                    {activityTypes.map((type) => (
-                      <option key={type} value={type}>
-                        {type}
-                      </option>
-                    ))}
-                  </select>
-                </td>
-                <td>
-                  <textarea
-                    value={entryRow.notes}
-                    onChange={(event) => updateEntry(entryRow.id, { notes: event.target.value })}
-                  />
-                </td>
-                <td>
-                  <div className="row-actions">
-                    <button type="button" onClick={() => duplicateEntry(entryRow)}>
-                      Duplicate
-                    </button>
-                    <button
-                      type="button"
-                      className="danger"
-                      onClick={() =>
-                        setEntries((current) => current.filter((item) => item.id !== entryRow.id))
+        <div className="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Date</th>
+                <th>Project</th>
+                <th>Hours</th>
+                <th>Billable</th>
+                <th>Activity Type</th>
+                <th>Notes</th>
+              </tr>
+            </thead>
+            <tbody>
+              {filteredSuggestions.map((entry) => (
+                <tr key={entry.id} className={entry.hours > 12 || !entry.projectId ? "review-row" : ""}>
+                  <td>
+                    <input
+                      type="date"
+                      value={entry.date}
+                      onChange={(event) => updateSuggestion(entry.id, { date: event.target.value })}
+                    />
+                  </td>
+                  <td>
+                    <ProjectLookup
+                      label="Project"
+                      value={entry.projectLabel}
+                      onChange={(project) =>
+                        updateSuggestion(entry.id, {
+                          projectId: project.id,
+                          projectLabel: project.label,
+                        })
+                      }
+                    />
+                  </td>
+                  <td>
+                    <input
+                      className="hours"
+                      type="number"
+                      min="0"
+                      step="0.25"
+                      value={entry.hours}
+                      onChange={(event) =>
+                        updateSuggestion(entry.id, { hours: Number(event.target.value) })
+                      }
+                    />
+                  </td>
+                  <td className="checkbox-cell">
+                    <input
+                      type="checkbox"
+                      checked={entry.billable}
+                      onChange={(event) =>
+                        updateSuggestion(entry.id, { billable: event.target.checked })
+                      }
+                    />
+                  </td>
+                  <td>
+                    <select
+                      value={entry.activityType}
+                      onChange={(event) =>
+                        updateSuggestion(entry.id, { activityType: event.target.value })
                       }
                     >
-                      Delete
-                    </button>
-                  </div>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+                      {activityTypes.map((type) => (
+                        <option key={type} value={type}>
+                          {type}
+                        </option>
+                      ))}
+                    </select>
+                  </td>
+                  <td>
+                    <textarea
+                      value={entry.notes}
+                      onChange={(event) => updateSuggestion(entry.id, { notes: event.target.value })}
+                    />
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       </section>
 
-      <section className="manual-entry" aria-label="Add manual time entry">
-        <div>
-          <p className="eyebrow">Manual entry</p>
-          <h2>Add a time entry</h2>
+      <section className="panel">
+        <div className="section-heading">
+          <div>
+            <p className="eyebrow">Table 2</p>
+            <h2>Manual Entry</h2>
+          </div>
+          <button type="button" className="primary" onClick={addManualEntry}>
+            Add Entry
+          </button>
         </div>
         <div className="manual-grid">
           <label>
             Date
             <input
               type="date"
-              value={draft.date}
-              onChange={(event) => setDraft({ ...draft, date: event.target.value })}
+              value={manualDraft.date}
+              onChange={(event) => setManualDraft({ ...manualDraft, date: event.target.value })}
             />
           </label>
-          <label>
-            Project
-            <select
-              value={draft.projectKey}
-              onChange={(event) =>
-                setDraft({ ...draft, projectKey: event.target.value as ProjectKey })
-              }
-            >
-              <option value="client">{CLIENT_PROJECT.id}</option>
-              <option value="internal">{INTERNAL_PROJECT.id}</option>
-            </select>
-          </label>
+          <ProjectLookup
+            label="Project"
+            value={manualDraft.projectLabel}
+            onChange={(project) =>
+              setManualDraft({ ...manualDraft, projectId: project.id, projectLabel: project.label })
+            }
+          />
           <label>
             Hours
             <input
               type="number"
               min="0"
               step="0.25"
-              value={draft.hours}
-              onChange={(event) => setDraft({ ...draft, hours: Number(event.target.value) })}
+              value={manualDraft.hours}
+              onChange={(event) =>
+                setManualDraft({ ...manualDraft, hours: Number(event.target.value) })
+              }
             />
           </label>
-          <label>
+          <label className="manual-checkbox">
             Billable
-            <input type="text" value="True" readOnly />
+            <input
+              type="checkbox"
+              checked={manualDraft.billable}
+              onChange={(event) =>
+                setManualDraft({ ...manualDraft, billable: event.target.checked })
+              }
+            />
           </label>
           <label>
             Activity Type
             <select
-              value={draft.activityType}
-              onChange={(event) => setDraft({ ...draft, activityType: event.target.value })}
+              value={manualDraft.activityType}
+              onChange={(event) =>
+                setManualDraft({ ...manualDraft, activityType: event.target.value })
+              }
             >
               {activityTypes.map((type) => (
                 <option key={type} value={type}>
@@ -566,49 +526,71 @@ export default function Home() {
           <label className="notes-field">
             Notes
             <textarea
-              value={draft.notes}
-              onChange={(event) => setDraft({ ...draft, notes: event.target.value })}
+              value={manualDraft.notes}
+              onChange={(event) => setManualDraft({ ...manualDraft, notes: event.target.value })}
               placeholder="Describe the work for Salesforce notes"
             />
           </label>
         </div>
-        <button type="button" className="primary add-button" onClick={addManualEntry}>
-          Add Entry
-        </button>
       </section>
 
-      <section className="payload" aria-label="Salesforce field mapping">
-        <h2>Salesforce Mapping</h2>
-        <dl>
+      <section className="panel">
+        <div className="section-heading">
           <div>
-            <dt>Object</dt>
-            <dd>TASKRAY__trTaskTime__c</dd>
+            <p className="eyebrow">Table 3</p>
+            <h2>Salesforce TaskRay Time</h2>
           </div>
-          <div>
-            <dt>Date</dt>
-            <dd>TASKRAY__Date__c</dd>
+          <div className="date-filters">
+            <label>
+              Start
+              <input
+                type="date"
+                value={salesforceStart}
+                onChange={(event) => setSalesforceStart(event.target.value)}
+              />
+            </label>
+            <label>
+              End
+              <input
+                type="date"
+                value={salesforceEnd}
+                onChange={(event) => setSalesforceEnd(event.target.value)}
+              />
+            </label>
           </div>
-          <div>
-            <dt>Project</dt>
-            <dd>TASKRAY__Project__c</dd>
-          </div>
-          <div>
-            <dt>Hours</dt>
-            <dd>TASKRAY__Hours__c</dd>
-          </div>
-          <div>
-            <dt>Billable</dt>
-            <dd>TASKRAY__Billable__c</dd>
-          </div>
-          <div>
-            <dt>Activity Type</dt>
-            <dd>Activity_Type__c</dd>
-          </div>
-          <div>
-            <dt>Notes</dt>
-            <dd>TASKRAY__Notes__c</dd>
-          </div>
-        </dl>
+        </div>
+        <p className="table-note">
+          Read-only pull from KicksawProd for TaskRay Time records owned by Kendra Ramey. Sorted by
+          Date descending, then Project and Activity Type.
+        </p>
+        <div className="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Date</th>
+                <th>Project</th>
+                <th>Hours</th>
+                <th>Billable</th>
+                <th>Activity Type</th>
+                <th>Notes</th>
+                <th>Record</th>
+              </tr>
+            </thead>
+            <tbody>
+              {filteredSalesforceRows.map((entry) => (
+                <tr key={entry.recordId}>
+                  <td>{entry.date}</td>
+                  <td>{entry.projectLabel}</td>
+                  <td className="numeric">{formatHours(entry.hours)}</td>
+                  <td>{entry.billable ? "True" : "False"}</td>
+                  <td>{entry.activityType}</td>
+                  <td>{entry.notes || "-"}</td>
+                  <td className="record-id">{entry.recordId}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       </section>
     </main>
   );
