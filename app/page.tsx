@@ -27,8 +27,26 @@ type TimeEntry = {
 
 type SalesforceTimeEntry = Omit<TimeEntry, "source"> & {
   recordId: string;
+  recordName: string;
   category: string;
   timeType: string;
+};
+
+type SortDirection = "asc" | "desc";
+type SuggestedSortKey = "date" | "projectLabel" | "hours" | "billable" | "activityType" | "notes";
+type SalesforceSortKey =
+  | "date"
+  | "projectLabel"
+  | "hours"
+  | "billable"
+  | "activityType"
+  | "timeType"
+  | "notes"
+  | "recordName";
+
+type SortConfig<Key extends string> = {
+  key: Key;
+  direction: SortDirection;
 };
 
 const monthStart = "2026-07-01";
@@ -36,6 +54,7 @@ const monthEnd = "2026-07-31";
 const defaultSuggestionStart = "2026-07-11";
 const defaultSuggestionEnd = "2026-07-21";
 const ownerId = "0054T000001in8HQAQ";
+const salesforceBaseUrl = "https://kicksaw.my.salesforce.com";
 
 const RECORD_TYPE_IDS: Record<RecordTypeDeveloperName, string> = {
   Client_Work: "012Qh000002bDl7IAE",
@@ -98,22 +117,22 @@ const activityTypes = [
 ];
 
 const salesforceRows: SalesforceTimeEntry[] = [
-  sf("a1JQh00000I95R8MAJ", "2026-07-10", CRISIS_PROJECT, 5.25, true, "Coding and Configuration", "", "", "Engagement Fee"),
-  sf("a1JQh00000I95R7MAJ", "2026-07-10", CRISIS_PROJECT, 2, true, "Meeting", "", "", "Engagement Fee"),
-  sf("a1JQh00000I95R9MAJ", "2026-07-10", INTERNAL_PROJECT, 0.5, false, "People and Team Activities", "", "Internal", "Internal"),
-  sf("a1JQh00000I8Nl4MAF", "2026-07-09", CRISIS_PROJECT, 5.5, true, "Coding and Configuration", "", "", "Engagement Fee"),
-  sf("a1JQh00000I8Nl3MAF", "2026-07-09", CRISIS_PROJECT, 2, true, "Meeting", "", "", "Engagement Fee"),
-  sf("a1JQh00000I8NI3MAN", "2026-07-08", CRISIS_PROJECT, 5, true, "Coding and Configuration", "", "", "Engagement Fee"),
-  sf("a1JQh00000I8NI2MAN", "2026-07-08", CRISIS_PROJECT, 5.5, true, "Meeting", "", "", "Engagement Fee"),
-  sf("a1JQh00000I8NI4MAN", "2026-07-08", INTERNAL_PROJECT, 0.5, false, "People and Team Activities", "", "Internal", "Internal"),
-  sf("a1JQh00000I8NTKMA3", "2026-07-07", CRISIS_PROJECT, 6.25, true, "Coding and Configuration", "", "", "Engagement Fee"),
-  sf("a1JQh00000I8NTJMA3", "2026-07-07", CRISIS_PROJECT, 2, true, "Meeting", "", "", "Engagement Fee"),
-  sf("a1JQh00000I8NJeMAN", "2026-07-06", CRISIS_PROJECT, 5.5, true, "Coding and Configuration", "", "", "Engagement Fee"),
-  sf("a1JQh00000I8NJdMAN", "2026-07-06", CRISIS_PROJECT, 3.5, true, "Meeting", "", "", "Engagement Fee"),
-  sf("a1JQh00000Hzhj0MAB", "2026-07-02", CRISIS_PROJECT, 4, true, "Coding and Configuration", "", "", "Engagement Fee"),
-  sf("a1JQh00000HzhizMAB", "2026-07-02", CRISIS_PROJECT, 4, true, "Meeting", "", "", "Engagement Fee"),
-  sf("a1JQh00000HzhnpMAB", "2026-07-01", CRISIS_PROJECT, 2, true, "Coding and Configuration", "", "", "Engagement Fee"),
-].sort(sortSalesforce);
+  sf("a1JQh00000I95R8MAJ", "TIME-178790", "2026-07-10", CRISIS_PROJECT, 5.25, true, "Coding and Configuration", "Build -Deployments to PC", "", "Engagement Fee"),
+  sf("a1JQh00000I95R7MAJ", "TIME-178789", "2026-07-10", CRISIS_PROJECT, 2, true, "Meeting", "Meetings -Metrics & things, OnSolve | Crisis24 | Kicksaw - Tech Team Daily UAT Triage, Kendra / Ben", "", "Engagement Fee"),
+  sf("a1JQh00000I95R9MAJ", "TIME-178791", "2026-07-10", INTERNAL_PROJECT, 0.5, false, "People and Team Activities", "Delivery AI Lounge (Optional Series)", "Internal", "Internal"),
+  sf("a1JQh00000I8Nl4MAF", "TIME-178414", "2026-07-09", CRISIS_PROJECT, 5.5, true, "Coding and Configuration", "Build -Deployments, OS Data Audit", "", "Engagement Fee"),
+  sf("a1JQh00000I8Nl3MAF", "TIME-178413", "2026-07-09", CRISIS_PROJECT, 2, true, "Meeting", "Meetings -OnSolve | Crisis24 | Kicksaw - Tech Team Daily UAT Triage, OS Data Fix Debrief", "", "Engagement Fee"),
+  sf("a1JQh00000I8NI3MAN", "TIME-178410", "2026-07-08", CRISIS_PROJECT, 5, true, "Coding and Configuration", "Build -Opp Line Migration Prep, Deployments, OS Data fix", "", "Engagement Fee"),
+  sf("a1JQh00000I8NI2MAN", "TIME-178409", "2026-07-08", CRISIS_PROJECT, 5.5, true, "Meeting", "Meetings -OnSolve | Kicksaw - INTERNAL - Daily Stand-Up, OnSolve Tech Team | Kicksaw - Metrics Review, OnSolve | Crisis24 | Kicksaw - Tech Team Daily UAT Triage, OS Data Fix Review, OS Data Fix Party", "", "Engagement Fee"),
+  sf("a1JQh00000I8NI4MAN", "TIME-178411", "2026-07-08", INTERNAL_PROJECT, 0.5, false, "People and Team Activities", "Kendra / DJ (Bi-weekly, 1:1, until 8/10)", "Internal", "Internal"),
+  sf("a1JQh00000I8NTKMA3", "TIME-178407", "2026-07-07", CRISIS_PROJECT, 6.25, true, "Coding and Configuration", "Build -Tickets, Migration Price Validation, Data fix", "", "Engagement Fee"),
+  sf("a1JQh00000I8NTJMA3", "TIME-178406", "2026-07-07", CRISIS_PROJECT, 2, true, "Meeting", "Meetings -OnSolve | Kicksaw - INTERNAL - Daily Stand-Up, OnSolve | Crisis24 | Kicksaw - Tech Team Daily UAT Triage, Closing Process Flow, CPQ Migration Challenges/Changes", "", "Engagement Fee"),
+  sf("a1JQh00000I8NJeMAN", "TIME-178405", "2026-07-06", CRISIS_PROJECT, 5.5, true, "Coding and Configuration", "Build -Deployments", "", "Engagement Fee"),
+  sf("a1JQh00000I8NJdMAN", "TIME-178404", "2026-07-06", CRISIS_PROJECT, 3.5, true, "Meeting", "Meetings - Ginny Chat, INTERNAL OnSolve | Crisis24 - Weekly Team Planning, OnSolve | Crisis24 | Kicksaw - Tech Team Daily UAT Triage, OnSolve | Kicsaw Metrics Follow-Up", "", "Engagement Fee"),
+  sf("a1JQh00000Hzhj0MAB", "TIME-177063", "2026-07-02", CRISIS_PROJECT, 4, true, "Coding and Configuration", "UAT", "", "Engagement Fee"),
+  sf("a1JQh00000HzhizMAB", "TIME-177062", "2026-07-02", CRISIS_PROJECT, 4, true, "Meeting", "Meetings - OnSolve | Kicksaw - INTERNAL - Daily Stand-Up, OnSolve | Crisis24 | Kicksaw - Tech Team Daily UAT Triage, OnSolve | Kicksaw - Full2 Data Migration (Resolved Issues & Logic), Metrics Alternate Approach", "", "Engagement Fee"),
+  sf("a1JQh00000HzhnpMAB", "TIME-177064", "2026-07-01", CRISIS_PROJECT, 2, true, "Coding and Configuration", "Deployments to PC", "", "Engagement Fee"),
+];
 
 const calendarSuggestionSeed: TimeEntry[] = [
   suggested(
@@ -153,6 +172,7 @@ function project(id: string, label: string, pricingStructure: PricingStructure):
 
 function sf(
   recordId: string,
+  recordName: string,
   date: string,
   selectedProject: Project,
   hours: number,
@@ -165,6 +185,7 @@ function sf(
   return {
     id: recordId,
     recordId,
+    recordName,
     date,
     projectValue: selectedProject.idPricingStructure,
     projectLabel: selectedProject.label,
@@ -215,14 +236,6 @@ function blankEntry(): TimeEntry {
 function sortSuggested(a: TimeEntry, b: TimeEntry) {
   return (
     a.date.localeCompare(b.date) ||
-    a.projectLabel.localeCompare(b.projectLabel) ||
-    a.activityType.localeCompare(b.activityType)
-  );
-}
-
-function sortSalesforce(a: SalesforceTimeEntry, b: SalesforceTimeEntry) {
-  return (
-    b.date.localeCompare(a.date) ||
     a.projectLabel.localeCompare(b.projectLabel) ||
     a.activityType.localeCompare(b.activityType)
   );
@@ -305,6 +318,70 @@ function toSalesforcePayload(entries: TimeEntry[]) {
   return entries.map(compactPayloadRecord);
 }
 
+function recordUrl(recordId: string) {
+  return `${salesforceBaseUrl}/lightning/r/TASKRAY__trTaskTime__c/${recordId}/view`;
+}
+
+function compareValues(left: string | number | boolean, right: string | number | boolean) {
+  if (typeof left === "number" && typeof right === "number") return left - right;
+  if (typeof left === "boolean" && typeof right === "boolean") return Number(left) - Number(right);
+  return String(left).localeCompare(String(right), undefined, { numeric: true, sensitivity: "base" });
+}
+
+function sortedSuggestions(entries: TimeEntry[], sortConfig: SortConfig<SuggestedSortKey>) {
+  return [...entries].sort((a, b) => {
+    const primary = compareValues(a[sortConfig.key], b[sortConfig.key]);
+    const fallback = sortSuggested(a, b);
+    return (primary || fallback) * (sortConfig.direction === "asc" ? 1 : -1);
+  });
+}
+
+function sortedSalesforceRows(entries: SalesforceTimeEntry[], sortConfig: SortConfig<SalesforceSortKey>) {
+  return [...entries].sort((a, b) => {
+    const primary = compareValues(a[sortConfig.key], b[sortConfig.key]);
+    const fallback =
+      b.date.localeCompare(a.date) ||
+      a.projectLabel.localeCompare(b.projectLabel) ||
+      a.activityType.localeCompare(b.activityType);
+    return (primary || fallback) * (sortConfig.direction === "asc" ? 1 : -1);
+  });
+}
+
+function nextSort<Key extends string>(current: SortConfig<Key>, key: Key): SortConfig<Key> {
+  return {
+    key,
+    direction: current.key === key && current.direction === "asc" ? "desc" : "asc",
+  };
+}
+
+function SortHeader<Key extends string>({
+  label,
+  sortKey,
+  sortConfig,
+  onSort,
+}: {
+  label: string;
+  sortKey: Key;
+  sortConfig: SortConfig<Key>;
+  onSort: (key: Key) => void;
+}) {
+  const active = sortConfig.key === sortKey;
+  const indicator = active ? (sortConfig.direction === "asc" ? "Asc" : "Desc") : "";
+
+  return (
+    <th>
+      <button
+        type="button"
+        className={active ? "sort-button active" : "sort-button"}
+        onClick={() => onSort(sortKey)}
+      >
+        <span>{label}</span>
+        <span aria-hidden="true">{indicator}</span>
+      </button>
+    </th>
+  );
+}
+
 function ProjectLookup({
   label,
   value,
@@ -345,15 +422,31 @@ export default function Home() {
   const [salesforceEnd, setSalesforceEnd] = useState(monthEnd);
   const [suggestions, setSuggestions] = useState(calendarSuggestionSeed);
   const [manualDraft, setManualDraft] = useState(blankEntry());
+  const [suggestionSort, setSuggestionSort] = useState<SortConfig<SuggestedSortKey>>({
+    key: "date",
+    direction: "asc",
+  });
+  const [salesforceSort, setSalesforceSort] = useState<SortConfig<SalesforceSortKey>>({
+    key: "date",
+    direction: "desc",
+  });
 
   const filteredSuggestions = useMemo(
-    () => suggestions.filter((entry) => inRange(entry, suggestionStart, suggestionEnd)).sort(sortSuggested),
-    [suggestions, suggestionEnd, suggestionStart],
+    () =>
+      sortedSuggestions(
+        suggestions.filter((entry) => inRange(entry, suggestionStart, suggestionEnd)),
+        suggestionSort,
+      ),
+    [suggestions, suggestionEnd, suggestionSort, suggestionStart],
   );
 
   const filteredSalesforceRows = useMemo(
-    () => salesforceRows.filter((entry) => inRange(entry, salesforceStart, salesforceEnd)).sort(sortSalesforce),
-    [salesforceEnd, salesforceStart],
+    () =>
+      sortedSalesforceRows(
+        salesforceRows.filter((entry) => inRange(entry, salesforceStart, salesforceEnd)),
+        salesforceSort,
+      ),
+    [salesforceEnd, salesforceSort, salesforceStart],
   );
 
   const totals = useMemo(() => {
@@ -462,20 +555,16 @@ export default function Home() {
             </label>
           </div>
         </div>
-        <p className="table-note">
-          OOO is no longer suggested as time. Same-day calendar entries with the same title should be
-          consolidated into one row before review.
-        </p>
         <div className="table-wrap">
           <table>
             <thead>
               <tr>
-                <th>Date</th>
-                <th>Project</th>
-                <th>Hours</th>
-                <th>Billable</th>
-                <th>Activity Type</th>
-                <th>Notes</th>
+                <SortHeader label="Date" sortKey="date" sortConfig={suggestionSort} onSort={(key) => setSuggestionSort((current) => nextSort(current, key))} />
+                <SortHeader label="Project" sortKey="projectLabel" sortConfig={suggestionSort} onSort={(key) => setSuggestionSort((current) => nextSort(current, key))} />
+                <SortHeader label="Hours" sortKey="hours" sortConfig={suggestionSort} onSort={(key) => setSuggestionSort((current) => nextSort(current, key))} />
+                <SortHeader label="Billable" sortKey="billable" sortConfig={suggestionSort} onSort={(key) => setSuggestionSort((current) => nextSort(current, key))} />
+                <SortHeader label="Activity Type" sortKey="activityType" sortConfig={suggestionSort} onSort={(key) => setSuggestionSort((current) => nextSort(current, key))} />
+                <SortHeader label="Notes" sortKey="notes" sortConfig={suggestionSort} onSort={(key) => setSuggestionSort((current) => nextSort(current, key))} />
                 <th>Remove</th>
               </tr>
             </thead>
@@ -662,21 +751,18 @@ export default function Home() {
             </label>
           </div>
         </div>
-        <p className="table-note">
-          Read-only TaskRay Time rows are sorted by Date descending, then Project and Activity Type.
-        </p>
         <div className="table-wrap">
           <table>
             <thead>
               <tr>
-                <th>Date</th>
-                <th>Project</th>
-                <th>Hours</th>
-                <th>Billable</th>
-                <th>Activity Type</th>
-                <th>Time Type</th>
-                <th>Notes</th>
-                <th>Record</th>
+                <SortHeader label="Date" sortKey="date" sortConfig={salesforceSort} onSort={(key) => setSalesforceSort((current) => nextSort(current, key))} />
+                <SortHeader label="Project" sortKey="projectLabel" sortConfig={salesforceSort} onSort={(key) => setSalesforceSort((current) => nextSort(current, key))} />
+                <SortHeader label="Hours" sortKey="hours" sortConfig={salesforceSort} onSort={(key) => setSalesforceSort((current) => nextSort(current, key))} />
+                <SortHeader label="Billable" sortKey="billable" sortConfig={salesforceSort} onSort={(key) => setSalesforceSort((current) => nextSort(current, key))} />
+                <SortHeader label="Activity Type" sortKey="activityType" sortConfig={salesforceSort} onSort={(key) => setSalesforceSort((current) => nextSort(current, key))} />
+                <SortHeader label="Time Type" sortKey="timeType" sortConfig={salesforceSort} onSort={(key) => setSalesforceSort((current) => nextSort(current, key))} />
+                <SortHeader label="Notes" sortKey="notes" sortConfig={salesforceSort} onSort={(key) => setSalesforceSort((current) => nextSort(current, key))} />
+                <SortHeader label="Record" sortKey="recordName" sortConfig={salesforceSort} onSort={(key) => setSalesforceSort((current) => nextSort(current, key))} />
               </tr>
             </thead>
             <tbody>
@@ -696,7 +782,11 @@ export default function Home() {
                   <td>{entry.activityType}</td>
                   <td>{entry.timeType || "-"}</td>
                   <td>{entry.notes || "-"}</td>
-                  <td className="record-id">{entry.recordId}</td>
+                  <td className="record-id">
+                    <a href={recordUrl(entry.recordId)} target="_blank" rel="noreferrer">
+                      {entry.recordName}
+                    </a>
+                  </td>
                 </tr>
               ))}
             </tbody>

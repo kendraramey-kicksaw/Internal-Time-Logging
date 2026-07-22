@@ -255,6 +255,27 @@ th {
   text-transform: uppercase;
 }
 
+.sort-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 6px;
+  min-height: 24px;
+  width: 100%;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: inherit;
+  padding: 0;
+  text-align: left;
+  text-transform: uppercase;
+}
+
+.sort-button:hover,
+.sort-button.active {
+  color: var(--accent-strong);
+}
+
 td:nth-child(1) {
   width: 150px;
 }
@@ -289,7 +310,7 @@ tr.review-row td {
 
 .hours,
 .numeric {
-  text-align: right;
+  text-align: left;
 }
 
 .checkbox-cell,
@@ -302,6 +323,16 @@ tr.review-row td {
   font-family: var(--font-geist-mono), ui-monospace, SFMono-Regular, Menlo, monospace;
   font-size: 0.82rem;
   overflow-wrap: anywhere;
+}
+
+.record-id a {
+  color: var(--accent-strong);
+  font-weight: 800;
+  text-decoration: none;
+}
+
+.record-id a:hover {
+  text-decoration: underline;
 }
 
 .manual-grid {

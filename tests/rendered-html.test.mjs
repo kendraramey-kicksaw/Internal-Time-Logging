@@ -35,9 +35,13 @@ test("server-renders the calendar time-entry workspace", async () => {
   assert.match(html, /Salesforce TaskRay Time/);
   assert.match(html, /Copy Salesforce Payload/);
   assert.match(html, /Remove/);
+  assert.match(html, /TIME-178790/);
+  assert.match(html, /Build -Deployments to PC/);
   assert.match(html, /Crisis24 - OnSolve Migration - \(SOPS\)/);
   assert.match(html, /Kicksaw - Internal Time Tracking/);
   assert.match(html, /2026-07-11/);
+  assert.doesNotMatch(html, /Read-only TaskRay Time rows are sorted/);
+  assert.doesNotMatch(html, /OOO is no longer suggested as time/);
   assert.doesNotMatch(html, /Project source/);
   assert.doesNotMatch(html, /Calendar Diagnostics/);
 });
