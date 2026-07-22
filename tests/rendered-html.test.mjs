@@ -30,16 +30,16 @@ test("server-renders the calendar time-entry workspace", async () => {
 
   const html = await response.text();
   assert.match(html, /<title>Calendar Time Entries<\/title>/i);
-  assert.match(html, /Table 1/);
   assert.match(html, /Suggested Time Entries/);
-  assert.match(html, /Table 2/);
   assert.match(html, /Manual Entry/);
-  assert.match(html, /Table 3/);
   assert.match(html, /Salesforce TaskRay Time/);
   assert.match(html, /Copy Salesforce Payload/);
+  assert.match(html, /Remove/);
   assert.match(html, /Crisis24 - OnSolve Migration - \(SOPS\)/);
   assert.match(html, /Kicksaw - Internal Time Tracking/);
   assert.match(html, /2026-07-11/);
+  assert.doesNotMatch(html, /Project source/);
+  assert.doesNotMatch(html, /Calendar Diagnostics/);
 });
 
 test("keeps the starter preview out of the production screen", async () => {

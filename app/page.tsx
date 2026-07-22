@@ -31,18 +31,6 @@ type SalesforceTimeEntry = Omit<TimeEntry, "source"> & {
   timeType: string;
 };
 
-type CalendarDiagnostic = {
-  date: string;
-  pulled: number;
-  included: number;
-  ignoredHome: number;
-  ignoredOoo: number;
-  ignoredFocus: number;
-  ignoredDeclined: number;
-  soloWorkBlocks: number;
-  notes: string;
-};
-
 const monthStart = "2026-07-01";
 const monthEnd = "2026-07-31";
 const defaultSuggestionStart = "2026-07-11";
@@ -146,31 +134,6 @@ const calendarSuggestionSeed: TimeEntry[] = [
   ),
 ];
 
-const calendarDiagnostics: CalendarDiagnostic[] = [
-  {
-    date: "2026-07-21",
-    pulled: 3,
-    included: 2,
-    ignoredHome: 1,
-    ignoredOoo: 0,
-    ignoredFocus: 0,
-    ignoredDeclined: 0,
-    soloWorkBlocks: 0,
-    notes: "Primary calendar returned Home plus two accepted meetings; no solo coding/configuration blocks were returned for the full local day.",
-  },
-  {
-    date: "2026-07-20",
-    pulled: 5,
-    included: 5,
-    ignoredHome: 0,
-    ignoredOoo: 0,
-    ignoredFocus: 0,
-    ignoredDeclined: 0,
-    soloWorkBlocks: 0,
-    notes: "Included meeting titles were consolidated into one same-day suggestion row.",
-  },
-];
-
 function project(id: string, label: string, pricingStructure: PricingStructure): Project {
   return {
     id,
@@ -233,7 +196,7 @@ function blankEntry(): TimeEntry {
     date: defaultSuggestionEnd,
     projectValue: CRISIS_PROJECT.idPricingStructure,
     projectLabel: CRISIS_PROJECT.label,
-    hours: 0.25,
+    hours: 0,
     billable: true,
     activityType: "Meeting",
     notes: "",
@@ -385,11 +348,6 @@ export default function Home() {
     [salesforceEnd, salesforceStart],
   );
 
-  const filteredDiagnostics = useMemo(
-    () => calendarDiagnostics.filter((entry) => inRange(entry, suggestionStart, suggestionEnd)),
-    [suggestionEnd, suggestionStart],
-  );
-
   const totals = useMemo(() => {
     const suggestedHours = filteredSuggestions.reduce((sum, entry) => sum + entry.hours, 0);
     const salesforceHours = filteredSalesforceRows.reduce((sum, entry) => sum + entry.hours, 0);
@@ -408,6 +366,10 @@ export default function Home() {
     setSuggestions((current) =>
       current.map((entry) => (entry.id === id ? { ...entry, ...updates } : entry)),
     );
+  }
+
+  function removeSuggestion(id: string) {
+    setSuggestions((current) => current.filter((entry) => entry.id !== id));
   }
 
   function addManualEntry() {
@@ -468,25 +430,9 @@ export default function Home() {
         </div>
       </section>
 
-      <section className="rules-strip" aria-label="Current automation rules">
-        <div>
-          <strong>Project source</strong>
-          <span>Flow filters: active, non-parent, non-template TaskRay projects; label is Name, value is Id_Pricing_Structure__c.</span>
-        </div>
-        <div>
-          <strong>Calendar filters</strong>
-          <span>Declined, Focus Time, Home, and OOO entries are ignored before suggestions are built.</span>
-        </div>
-        <div>
-          <strong>Payload logic</strong>
-          <span>Record type and time type are derived from project label and pricing structure.</span>
-        </div>
-      </section>
-
       <section className="panel">
         <div className="section-heading">
           <div>
-            <p className="eyebrow">Table 1</p>
             <h2>Suggested Time Entries</h2>
           </div>
           <div className="date-filters">
@@ -522,12 +468,11 @@ export default function Home() {
                 <th>Billable</th>
                 <th>Activity Type</th>
                 <th>Notes</th>
-                <th>Derived</th>
+                <th>Remove</th>
               </tr>
             </thead>
             <tbody>
               {filteredSuggestions.map((entry) => {
-                const selectedProject = projectForEntry(entry);
                 return (
                   <tr key={entry.id} className={entry.hours > 12 || !entry.projectValue ? "review-row" : ""}>
                     <td>
@@ -591,10 +536,14 @@ export default function Home() {
                         onChange={(event) => updateSuggestion(entry.id, { notes: event.target.value })}
                       />
                     </td>
-                    <td className="derived-cell">
-                      <span>{selectedProject?.pricingStructure ?? "Unmatched project"}</span>
-                      <span>{timeTypeForEntry(entry)}</span>
-                      <span>{recordTypeForEntry(entry).replaceAll("_", " ")}</span>
+                    <td>
+                      <button
+                        type="button"
+                        className="danger"
+                        onClick={() => removeSuggestion(entry.id)}
+                      >
+                        Remove
+                      </button>
                     </td>
                   </tr>
                 );
@@ -604,51 +553,9 @@ export default function Home() {
         </div>
       </section>
 
-      <section className="panel diagnostics-panel">
-        <div className="section-heading">
-          <div>
-            <p className="eyebrow">Calendar Diagnostics</p>
-            <h2>Source Check</h2>
-          </div>
-        </div>
-        <p className="table-note">
-          This shows what the calendar pull saw for the selected suggestion dates, so missing coding
-          blocks are visible as source gaps instead of silently disappearing.
-        </p>
-        <div className="diagnostics-grid">
-          {filteredDiagnostics.map((entry) => (
-            <article key={entry.date} className="diagnostic-card">
-              <div>
-                <strong>{entry.date}</strong>
-                <span>{entry.notes}</span>
-              </div>
-              <dl>
-                <div>
-                  <dt>Pulled</dt>
-                  <dd>{entry.pulled}</dd>
-                </div>
-                <div>
-                  <dt>Included</dt>
-                  <dd>{entry.included}</dd>
-                </div>
-                <div>
-                  <dt>Solo work</dt>
-                  <dd>{entry.soloWorkBlocks}</dd>
-                </div>
-                <div>
-                  <dt>Ignored</dt>
-                  <dd>{entry.ignoredHome + entry.ignoredOoo + entry.ignoredFocus + entry.ignoredDeclined}</dd>
-                </div>
-              </dl>
-            </article>
-          ))}
-        </div>
-      </section>
-
       <section className="panel">
         <div className="section-heading">
           <div>
-            <p className="eyebrow">Table 2</p>
             <h2>Manual Entry</h2>
           </div>
           <button type="button" className="primary" onClick={addManualEntry}>
@@ -681,7 +588,7 @@ export default function Home() {
               type="number"
               min="0"
               step="0.25"
-              value={manualDraft.hours}
+              value={manualDraft.hours || ""}
               onChange={(event) =>
                 setManualDraft({ ...manualDraft, hours: Number(event.target.value) })
               }
@@ -726,7 +633,6 @@ export default function Home() {
       <section className="panel">
         <div className="section-heading">
           <div>
-            <p className="eyebrow">Table 3</p>
             <h2>Salesforce TaskRay Time</h2>
           </div>
           <div className="date-filters">
@@ -771,7 +677,14 @@ export default function Home() {
                   <td>{entry.date}</td>
                   <td>{entry.projectLabel}</td>
                   <td className="numeric">{formatHours(entry.hours)}</td>
-                  <td>{entry.billable ? "True" : "False"}</td>
+                  <td className="checkbox-cell">
+                    <input
+                      aria-label={`Billable ${entry.recordId}`}
+                      type="checkbox"
+                      checked={entry.billable}
+                      readOnly
+                    />
+                  </td>
                   <td>{entry.activityType}</td>
                   <td>{entry.timeType || "-"}</td>
                   <td>{entry.notes || "-"}</td>
