@@ -32,6 +32,18 @@ type SalesforceTimeEntry = Omit<TimeEntry, "source"> & {
   timeType: string;
 };
 
+type CalendarEvent = {
+  id: string;
+  title: string;
+  start: string;
+  end: string;
+  project: Project;
+  activityType: "Meeting" | "Coding and Configuration" | "People and Team Activities";
+  billable: boolean;
+  responseStatus?: "accepted" | "declined" | null;
+  transparency?: "opaque" | "transparent";
+};
+
 type SortDirection = "asc" | "desc";
 type SuggestedSortKey = "date" | "projectLabel" | "hours" | "billable" | "activityType" | "notes";
 type SalesforceSortKey =
@@ -134,31 +146,21 @@ const salesforceRows: SalesforceTimeEntry[] = [
   sf("a1JQh00000HzhnpMAB", "TIME-177064", "2026-07-01", CRISIS_PROJECT, 2, true, "Coding and Configuration", "Deployments to PC", "", "Engagement Fee"),
 ];
 
-const calendarSuggestionSeed: TimeEntry[] = [
-  suggested(
-    "2026-07-20",
-    CRISIS_PROJECT,
-    3,
-    true,
-    "Meeting",
-    "INTERNAL OnSolve | Crisis24 - Weekly Team Planning, OnSolve | Crisis24 - Data Migration Daily Check-In, OnSolve | Crisis24 | Kicksaw - Tech Team Daily UAT Triage, Kayleigh / Ben - App demo, Ben/Kendra - C24 Migration",
-  ),
-  suggested(
-    "2026-07-21",
-    CRISIS_PROJECT,
-    1.5,
-    true,
-    "Meeting",
-    "Gearset with Ronak, OnSolve | Kicksaw - INTERNAL - Daily Stand-Up, OnSolve | Crisis24 | Kicksaw - Tech Team Daily UAT Triage",
-  ),
-  suggested(
-    "2026-07-21",
-    CRISIS_PROJECT,
-    6,
-    true,
-    "Coding and Configuration",
-    "Migration Review, Migration troubleshooting, Smoke Testing PC, Gearset",
-  ),
+const calendarEventSeed: CalendarEvent[] = [
+  calendarEvent("2026-07-20-home", "Home", "2026-07-20T00:00:00-04:00", "2026-07-21T00:00:00-04:00", CRISIS_PROJECT, "Coding and Configuration", true, null, "transparent"),
+  calendarEvent("2026-07-20-planning", "INTERNAL OnSolve | Crisis24 - Weekly Team Planning", "2026-07-20T09:00:00-04:00", "2026-07-20T10:00:00-04:00", CRISIS_PROJECT, "Meeting"),
+  calendarEvent("2026-07-20-migration-checkin", "OnSolve | Crisis24 - Data Migration Daily Check-In", "2026-07-20T10:00:00-04:00", "2026-07-20T10:30:00-04:00", CRISIS_PROJECT, "Meeting"),
+  calendarEvent("2026-07-20-uat", "OnSolve | Crisis24 | Kicksaw - Tech Team Daily UAT Triage", "2026-07-20T10:30:00-04:00", "2026-07-20T11:00:00-04:00", CRISIS_PROJECT, "Meeting"),
+  calendarEvent("2026-07-20-demo", "Kayleigh / Ben - App demo", "2026-07-20T11:00:00-04:00", "2026-07-20T11:30:00-04:00", CRISIS_PROJECT, "Meeting"),
+  calendarEvent("2026-07-20-feature-pc-a", "Feature & PC Sync", "2026-07-20T11:30:00-04:00", "2026-07-20T12:30:00-04:00", CRISIS_PROJECT, "Coding and Configuration"),
+  calendarEvent("2026-07-20-ben-kendra", "Ben/Kendra - C24 Migration", "2026-07-20T12:30:00-04:00", "2026-07-20T13:00:00-04:00", CRISIS_PROJECT, "Meeting"),
+  calendarEvent("2026-07-20-feature-pc-b", "Feature & PC Sync", "2026-07-20T13:00:00-04:00", "2026-07-20T16:30:00-04:00", CRISIS_PROJECT, "Coding and Configuration"),
+  calendarEvent("2026-07-21-home", "Home", "2026-07-21T00:00:00-04:00", "2026-07-22T00:00:00-04:00", CRISIS_PROJECT, "Coding and Configuration", true, null, "transparent"),
+  calendarEvent("2026-07-21-gearset-ronak", "Gearset with Ronak", "2026-07-21T09:00:00-04:00", "2026-07-21T09:30:00-04:00", CRISIS_PROJECT, "Meeting"),
+  calendarEvent("2026-07-21-standup", "OnSolve | Kicksaw - INTERNAL - Daily Stand-Up", "2026-07-21T09:30:00-04:00", "2026-07-21T10:00:00-04:00", CRISIS_PROJECT, "Meeting"),
+  calendarEvent("2026-07-21-review", "Migration Review", "2026-07-21T10:00:00-04:00", "2026-07-21T10:30:00-04:00", CRISIS_PROJECT, "Coding and Configuration"),
+  calendarEvent("2026-07-21-uat", "OnSolve | Crisis24 | Kicksaw - Tech Team Daily UAT Triage", "2026-07-21T10:30:00-04:00", "2026-07-21T11:00:00-04:00", CRISIS_PROJECT, "Meeting"),
+  calendarEvent("2026-07-21-troubleshooting", "Migration troubleshooting, Smoke Testing PC, Gearset", "2026-07-21T11:00:00-04:00", "2026-07-21T16:30:00-04:00", CRISIS_PROJECT, "Coding and Configuration"),
 ];
 
 function project(id: string, label: string, pricingStructure: PricingStructure): Project {
@@ -198,6 +200,30 @@ function sf(
   };
 }
 
+function calendarEvent(
+  id: string,
+  title: string,
+  start: string,
+  end: string,
+  selectedProject: Project,
+  activityType: CalendarEvent["activityType"],
+  billable = true,
+  responseStatus: CalendarEvent["responseStatus"] = "accepted",
+  transparency: CalendarEvent["transparency"] = "opaque",
+): CalendarEvent {
+  return {
+    id,
+    title,
+    start,
+    end,
+    project: selectedProject,
+    activityType,
+    billable,
+    responseStatus,
+    transparency,
+  };
+}
+
 function suggested(
   date: string,
   selectedProject: Project,
@@ -217,6 +243,58 @@ function suggested(
     notes,
     source: "Calendar",
   };
+}
+
+function dateFromEvent(event: CalendarEvent) {
+  return event.start.slice(0, 10);
+}
+
+function eventHours(event: CalendarEvent) {
+  return (new Date(event.end).getTime() - new Date(event.start).getTime()) / 3_600_000;
+}
+
+function shouldIgnoreCalendarEvent(event: CalendarEvent) {
+  const title = event.title.toLowerCase();
+  return (
+    event.responseStatus === "declined" ||
+    event.transparency === "transparent" ||
+    title.includes("focus time") ||
+    title.includes("ooo") ||
+    title.includes("out of office")
+  );
+}
+
+function buildCalendarSuggestions(startDate: string, endDate: string) {
+  const grouped = new Map<string, { entry: TimeEntry; titles: Set<string> }>();
+
+  for (const event of calendarEventSeed) {
+    const date = dateFromEvent(event);
+    if (date < startDate || date > endDate || shouldIgnoreCalendarEvent(event)) continue;
+
+    const groupKey = [
+      date,
+      event.project.idPricingStructure,
+      event.activityType,
+      event.billable ? "billable" : "nonbillable",
+    ].join("|");
+    const existing = grouped.get(groupKey);
+
+    if (existing) {
+      existing.entry.hours += eventHours(event);
+      existing.titles.add(event.title);
+      existing.entry.notes = Array.from(existing.titles).join(", ");
+    } else {
+      grouped.set(groupKey, {
+        entry: suggested(date, event.project, eventHours(event), event.billable, event.activityType, event.title),
+        titles: new Set([event.title]),
+      });
+    }
+  }
+
+  return Array.from(grouped.values()).map(({ entry }) => ({
+    ...entry,
+    hours: Number(entry.hours.toFixed(2)),
+  }));
 }
 
 function blankEntry(): TimeEntry {
@@ -420,7 +498,9 @@ export default function Home() {
   const [suggestionEnd, setSuggestionEnd] = useState(defaultSuggestionEnd);
   const [salesforceStart, setSalesforceStart] = useState(monthStart);
   const [salesforceEnd, setSalesforceEnd] = useState(monthEnd);
-  const [suggestions, setSuggestions] = useState(calendarSuggestionSeed);
+  const [suggestions, setSuggestions] = useState(() =>
+    buildCalendarSuggestions(defaultSuggestionStart, defaultSuggestionEnd),
+  );
   const [manualDraft, setManualDraft] = useState(blankEntry());
   const [suggestionSort, setSuggestionSort] = useState<SortConfig<SuggestedSortKey>>({
     key: "date",
@@ -485,6 +565,11 @@ export default function Home() {
       ].sort(sortSuggested),
     );
     setManualDraft(blankEntry());
+  }
+
+  function refreshCalendarSuggestions() {
+    const manualEntries = suggestions.filter((entry) => entry.source === "Manual");
+    setSuggestions([...manualEntries, ...buildCalendarSuggestions(suggestionStart, suggestionEnd)]);
   }
 
   function copyPayload() {
@@ -554,6 +639,9 @@ export default function Home() {
               />
             </label>
           </div>
+          <button type="button" onClick={refreshCalendarSuggestions}>
+            Refresh Calendar
+          </button>
         </div>
         <div className="table-wrap">
           <table>
