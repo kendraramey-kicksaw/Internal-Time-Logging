@@ -127,10 +127,18 @@ const calendarSuggestionSeed: TimeEntry[] = [
   suggested(
     "2026-07-21",
     CRISIS_PROJECT,
-    1,
+    1.5,
     true,
     "Meeting",
-    "OnSolve | Kicksaw - INTERNAL - Daily Stand-Up, OnSolve | Crisis24 | Kicksaw - Tech Team Daily UAT Triage",
+    "Gearset with Ronak, OnSolve | Kicksaw - INTERNAL - Daily Stand-Up, OnSolve | Crisis24 | Kicksaw - Tech Team Daily UAT Triage",
+  ),
+  suggested(
+    "2026-07-21",
+    CRISIS_PROJECT,
+    6,
+    true,
+    "Coding and Configuration",
+    "Migration Review, Migration troubleshooting, Smoke Testing PC, Gearset",
   ),
 ];
 
