@@ -2,84 +2,110 @@
 
 import { useMemo, useState } from "react";
 
+type PricingStructure = "Capacity" | "T&M" | "Hybrid" | "Internal";
+type RecordTypeDeveloperName = "Client_Work" | "Internal_Project" | "Internal_Work";
+type SuggestionSource = "Calendar" | "Manual";
+
 type Project = {
   id: string;
   label: string;
+  idPricingStructure: string;
+  pricingStructure: PricingStructure;
 };
 
 type TimeEntry = {
   id: string;
   date: string;
-  projectId: string;
+  projectValue: string;
   projectLabel: string;
   hours: number;
   billable: boolean;
   activityType: string;
   notes: string;
-  source: "Calendar" | "Manual";
+  source: SuggestionSource;
 };
 
 type SalesforceTimeEntry = Omit<TimeEntry, "source"> & {
   recordId: string;
   category: string;
-  type: string;
+  timeType: string;
+};
+
+type CalendarDiagnostic = {
+  date: string;
+  pulled: number;
+  included: number;
+  ignoredHome: number;
+  ignoredOoo: number;
+  ignoredFocus: number;
+  ignoredDeclined: number;
+  soloWorkBlocks: number;
+  notes: string;
 };
 
 const monthStart = "2026-07-01";
-const monthEnd = "2026-07-21";
+const monthEnd = "2026-07-31";
 const defaultSuggestionStart = "2026-07-11";
 const defaultSuggestionEnd = "2026-07-21";
+const ownerId = "0054T000001in8HQAQ";
 
-const CRISIS_PROJECT: Project = {
-  id: "a0uQh000004SaXhIAK",
-  label: "Crisis24 - OnSolve Migration - (SOPS)",
+const RECORD_TYPE_IDS: Record<RecordTypeDeveloperName, string> = {
+  Client_Work: "012Qh000002bDl7IAE",
+  Internal_Project: "012Qh000002bDDFIA2",
+  Internal_Work: "012Qh000002bDDGIA2",
 };
 
-const INTERNAL_PROJECT: Project = {
-  id: "a0uQh000007aLujIAE",
-  label: "Kicksaw - Internal Time Tracking",
-};
+const CRISIS_PROJECT = project(
+  "a0uQh000004SaXhIAK",
+  "Crisis24 - OnSolve Migration - (SOPS)",
+  "Capacity",
+);
+
+const INTERNAL_PROJECT = project(
+  "a0uQh000007aLujIAE",
+  "Kicksaw - Internal Time Tracking",
+  "Internal",
+);
 
 const projectOptions: Project[] = [
+  project("a0uQh000008VNTZIA4", "340B Direct (DBA Zion's Financial Bank) - Document Package - COPS", "T&M"),
+  project("a0uQh000008VN5NIAW", "340B Direct (DBA Zion's Financial Bank) - Managed Services COPS", "T&M"),
+  project("a0uQh000008q4R7IAI", "Aardvark Compare (AARDY): Agentforce Jumpstart (AOD)", "T&M"),
+  project("a0uQh000009GvhtIAC", "Abby Care: Maps Jumpstart (SOPS)", "T&M"),
+  project("a0uQh000007cMjUIAU", "All About You Adult Foster Care - Managed Services (AOD)", "T&M"),
+  project("a0uQh000008saLFIAY", "Allen Edwin Homes: Agentforce Jumpstart (AOD)", "T&M"),
+  project("a0uQh000008mx1BIAQ", "Altus: Revenue Cloud Enhancement - Discovery [SOPS]", "Capacity"),
+  project("a0uQh000009Gu97IAC", "Aluris: Jumpstart (SOPS)", "T&M"),
+  project("a0uQh000009CA3FIAW", "Amstar - SOPS", "Capacity"),
+  project("a0uQh0000089MPhIAM", "Analysis Group: Consulting", "T&M"),
   CRISIS_PROJECT,
+  project("a0uQh000005vgm1IAA", "Crisis24 - OnSolve Migration - (EOPS)", "Capacity"),
+  project("a0uQh000007ZQYHIA4", "Crisis24 - Agentforce POC (SOPS)", "T&M"),
+  project("a0uQh000005gx0nIAA", "Crisis24 - GSOC/PSG Portal Project (EOPS)", "Capacity"),
+  project("a0uQh000006hdqfIAA", "Crisis24 - OnSolve Workato Support", "T&M"),
   INTERNAL_PROJECT,
-  { id: "a0uQh000005vgm1IAA", label: "Crisis24 - OnSolve Migration - (EOPS)" },
-  { id: "a0uQh000007ZQYHIA4", label: "Crisis24 - Agentforce POC (SOPS)" },
-  { id: "a0uQh000005gx0nIAA", label: "Crisis24 - GSOC/PSG Portal Project (EOPS)" },
-  { id: "a0uQh000006hdqfIAA", label: "Crisis24 - OnSolve Workato Support" },
-  { id: "a0uQh000005y8UTIAY", label: "Kicksaw - Marketing Support" },
-  { id: "a0uQh000008VNTZIA4", label: "340B Direct (DBA Zion's Financial Bank) - Document Package - COPS" },
-  { id: "a0uQh000008VN5NIAW", label: "340B Direct (DBA Zion's Financial Bank) - Managed Services COPS" },
-  { id: "a0uQh000008q4R7IAI", label: "Aardvark Compare (AARDY): Agentforce Jumpstart (AOD)" },
-  { id: "a0uQh000009GvhtIAC", label: "Abby Care: Maps Jumpstart (SOPS)" },
-  { id: "a0uQh000007cMjUIAU", label: "All About You Adult Foster Care - Managed Services (AOD)" },
-  { id: "a0uQh000008saLFIAY", label: "Allen Edwin Homes: Agentforce Jumpstart (AOD)" },
-  { id: "a0uQh000008mx1BIAQ", label: "Altus: Revenue Cloud Enhancement - Discovery [SOPS]" },
-  { id: "a0uQh000009Gu97IAC", label: "Aluris: Jumpstart (SOPS)" },
-  { id: "a0uQh000009CA3FIAW", label: "Amstar - SOPS" },
-  { id: "a0uQh0000089MPhIAM", label: "Analysis Group: Consulting" },
-  { id: "a0uQh0000097SC5IAM", label: "Sight Sciences - Managed Services - July 2026" },
-  { id: "a0uQh000008MrYvIAK", label: "Sault College - Managed Services" },
-  { id: "a0uQh000008grOHIAY", label: "SBMA Benefits - Managed Services" },
-  { id: "a0uQh000007cMkaIAE", label: "Valor Technical Cleaning - Managed Services (AOD)" },
-  { id: "a0uQh000007oL3eIAE", label: "Vapi - Managed Services (AOD)" },
-  { id: "a0uQh000008HBLpIAO", label: "Vidal Construction - MS" },
+  project("a0uQh000005y8UTIAY", "Kicksaw - Marketing Support", "Internal"),
+  project("a0uQh0000097SC5IAM", "Sight Sciences - Managed Services - July 2026", "T&M"),
+  project("a0uQh000008MrYvIAK", "Sault College - Managed Services", "T&M"),
+  project("a0uQh000008grOHIAY", "SBMA Benefits - Managed Services", "T&M"),
+  project("a0uQh000007cMkaIAE", "Valor Technical Cleaning - Managed Services (AOD)", "T&M"),
+  project("a0uQh000007oL3eIAE", "Vapi - Managed Services (AOD)", "T&M"),
+  project("a0uQh000008HBLpIAO", "Vidal Construction - MS", "T&M"),
 ].sort((a, b) => a.label.localeCompare(b.label));
 
 const activityTypes = [
-  "Meeting",
-  "Coding and Configuration",
-  "People and Team Activities",
-  "PTO",
+  "Admin and Overhead",
   "Build",
-  "Release",
+  "Coding and Configuration",
+  "Communications",
   "Design",
   "Documentation",
-  "Admin and Overhead",
   "Learning and Development",
-  "Communications",
+  "Meeting",
+  "People and Team Activities",
   "Presales",
   "Recruiting",
+  "Release",
   "Travel",
 ];
 
@@ -102,11 +128,6 @@ const salesforceRows: SalesforceTimeEntry[] = [
 ].sort(sortSalesforce);
 
 const calendarSuggestionSeed: TimeEntry[] = [
-  suggested("2026-07-13", INTERNAL_PROJECT, 16, false, "PTO", "Out of office"),
-  suggested("2026-07-14", INTERNAL_PROJECT, 24, false, "PTO", "Out of office"),
-  suggested("2026-07-15", INTERNAL_PROJECT, 24, false, "PTO", "Out of office"),
-  suggested("2026-07-16", INTERNAL_PROJECT, 24, false, "PTO", "Out of office"),
-  suggested("2026-07-17", INTERNAL_PROJECT, 20, false, "PTO", "Out of office"),
   suggested(
     "2026-07-20",
     CRISIS_PROJECT,
@@ -125,45 +146,79 @@ const calendarSuggestionSeed: TimeEntry[] = [
   ),
 ];
 
+const calendarDiagnostics: CalendarDiagnostic[] = [
+  {
+    date: "2026-07-21",
+    pulled: 3,
+    included: 2,
+    ignoredHome: 1,
+    ignoredOoo: 0,
+    ignoredFocus: 0,
+    ignoredDeclined: 0,
+    soloWorkBlocks: 0,
+    notes: "Primary calendar returned Home plus two accepted meetings; no solo coding/configuration blocks were returned for the full local day.",
+  },
+  {
+    date: "2026-07-20",
+    pulled: 5,
+    included: 5,
+    ignoredHome: 0,
+    ignoredOoo: 0,
+    ignoredFocus: 0,
+    ignoredDeclined: 0,
+    soloWorkBlocks: 0,
+    notes: "Included meeting titles were consolidated into one same-day suggestion row.",
+  },
+];
+
+function project(id: string, label: string, pricingStructure: PricingStructure): Project {
+  return {
+    id,
+    label,
+    pricingStructure,
+    idPricingStructure: `${id}-${pricingStructure}`,
+  };
+}
+
 function sf(
   recordId: string,
   date: string,
-  project: Project,
+  selectedProject: Project,
   hours: number,
   billable: boolean,
   activityType: string,
   notes: string,
   category: string,
-  type: string,
+  timeType: string,
 ): SalesforceTimeEntry {
   return {
     id: recordId,
     recordId,
     date,
-    projectId: project.id,
-    projectLabel: project.label,
+    projectValue: selectedProject.idPricingStructure,
+    projectLabel: selectedProject.label,
     hours,
     billable,
     activityType,
     notes,
     category,
-    type,
+    timeType,
   };
 }
 
 function suggested(
   date: string,
-  project: Project,
+  selectedProject: Project,
   hours: number,
   billable: boolean,
   activityType: string,
   notes: string,
 ): TimeEntry {
   return {
-    id: `${date}-${activityType}-${notes}`.replace(/[^a-z0-9]+/gi, "-").toLowerCase(),
+    id: `${date}-${selectedProject.id}-${activityType}-${notes}`.replace(/[^a-z0-9]+/gi, "-").toLowerCase(),
     date,
-    projectId: project.id,
-    projectLabel: project.label,
+    projectValue: selectedProject.idPricingStructure,
+    projectLabel: selectedProject.label,
     hours,
     billable,
     activityType,
@@ -176,7 +231,7 @@ function blankEntry(): TimeEntry {
   return {
     id: "manual-draft",
     date: defaultSuggestionEnd,
-    projectId: CRISIS_PROJECT.id,
+    projectValue: CRISIS_PROJECT.idPricingStructure,
     projectLabel: CRISIS_PROJECT.label,
     hours: 0.25,
     billable: true,
@@ -214,19 +269,69 @@ function formatHours(hours: number) {
 }
 
 function projectForLabel(label: string) {
-  return projectOptions.find((project) => project.label === label);
+  return projectOptions.find((candidate) => candidate.label === label);
+}
+
+function projectForEntry(entry: Pick<TimeEntry, "projectValue" | "projectLabel">) {
+  return (
+    projectOptions.find((candidate) => candidate.idPricingStructure === entry.projectValue) ??
+    projectForLabel(entry.projectLabel)
+  );
+}
+
+function pricingStructureForEntry(entry: Pick<TimeEntry, "projectValue" | "projectLabel">) {
+  const selectedProject = projectForEntry(entry);
+  if (selectedProject) return selectedProject.pricingStructure;
+  const parts = entry.projectValue.split("-");
+  return (parts[parts.length - 1] || "Capacity") as PricingStructure;
+}
+
+function projectIdFromValue(projectValue: string) {
+  return projectValue.slice(0, 18);
+}
+
+function recordTypeForEntry(entry: Pick<TimeEntry, "projectLabel">): RecordTypeDeveloperName {
+  if (entry.projectLabel === INTERNAL_PROJECT.label) return "Internal_Work";
+  if (entry.projectLabel.includes("Kicksaw")) return "Internal_Project";
+  return "Client_Work";
+}
+
+function timeTypeForEntry(entry: Pick<TimeEntry, "projectValue" | "projectLabel">) {
+  const pricingStructure = pricingStructureForEntry(entry);
+  if (pricingStructure === "Capacity") return "Engagement Fee";
+  if (pricingStructure === "T&M") return "Hands-on-Keyboard";
+  if (pricingStructure === "Hybrid") return "Engagement Fee";
+  return "Internal";
+}
+
+function categoryForEntry(entry: Pick<TimeEntry, "projectLabel">) {
+  return entry.projectLabel.includes("Kicksaw") ? "Internal" : "";
+}
+
+function compactPayloadRecord(entry: TimeEntry) {
+  const recordTypeDeveloperName = recordTypeForEntry(entry);
+  const nonBillableReason = entry.billable ? undefined : "Not Applicable";
+  const notes = entry.notes.trim();
+
+  return {
+    attributes: { type: "TASKRAY__trTaskTime__c" },
+    RecordTypeId: RECORD_TYPE_IDS[recordTypeDeveloperName],
+    TASKRAY__Owner__c: ownerId,
+    TASKRAY__Date__c: entry.date,
+    TASKRAY__Project__c: projectIdFromValue(entry.projectValue),
+    TASKRAY__Hours__c: Number(entry.hours.toFixed(2)),
+    TASKRAY__Billable__c: entry.billable,
+    TASKRAY__trTimeType__c: timeTypeForEntry(entry),
+    Category__c: categoryForEntry(entry) || undefined,
+    Non_Billable_Reason__c: nonBillableReason,
+    Activity_Type__c: entry.activityType,
+    Notes__c: notes.slice(0, 255),
+    Notes_Long_Text__c: notes,
+  };
 }
 
 function toSalesforcePayload(entries: TimeEntry[]) {
-  return entries.map((entry) => ({
-    attributes: { type: "TASKRAY__trTaskTime__c" },
-    TASKRAY__Date__c: entry.date,
-    TASKRAY__Project__c: entry.projectId,
-    TASKRAY__Hours__c: Number(entry.hours.toFixed(2)),
-    TASKRAY__Billable__c: entry.billable,
-    Activity_Type__c: entry.activityType,
-    TASKRAY__Notes__c: entry.notes,
-  }));
+  return entries.map(compactPayloadRecord);
 }
 
 function ProjectLookup({
@@ -236,7 +341,7 @@ function ProjectLookup({
 }: {
   label: string;
   value: string;
-  onChange: (project: Project) => void;
+  onChange: (selectedProject: Project) => void;
 }) {
   return (
     <label>
@@ -247,7 +352,14 @@ function ProjectLookup({
         onChange={(event) => {
           const nextLabel = event.target.value;
           const selectedProject = projectForLabel(nextLabel);
-          onChange(selectedProject ?? { id: "", label: nextLabel });
+          onChange(
+            selectedProject ?? {
+              id: "",
+              label: nextLabel,
+              idPricingStructure: "",
+              pricingStructure: "Capacity",
+            },
+          );
         }}
         placeholder="Start typing a project name"
       />
@@ -259,7 +371,7 @@ export default function Home() {
   const [suggestionStart, setSuggestionStart] = useState(defaultSuggestionStart);
   const [suggestionEnd, setSuggestionEnd] = useState(defaultSuggestionEnd);
   const [salesforceStart, setSalesforceStart] = useState(monthStart);
-  const [salesforceEnd, setSalesforceEnd] = useState("2026-07-31");
+  const [salesforceEnd, setSalesforceEnd] = useState(monthEnd);
   const [suggestions, setSuggestions] = useState(calendarSuggestionSeed);
   const [manualDraft, setManualDraft] = useState(blankEntry());
 
@@ -273,10 +385,17 @@ export default function Home() {
     [salesforceEnd, salesforceStart],
   );
 
+  const filteredDiagnostics = useMemo(
+    () => calendarDiagnostics.filter((entry) => inRange(entry, suggestionStart, suggestionEnd)),
+    [suggestionEnd, suggestionStart],
+  );
+
   const totals = useMemo(() => {
     const suggestedHours = filteredSuggestions.reduce((sum, entry) => sum + entry.hours, 0);
     const salesforceHours = filteredSalesforceRows.reduce((sum, entry) => sum + entry.hours, 0);
-    const flaggedSuggestions = filteredSuggestions.filter((entry) => entry.hours > 12 || !entry.projectId).length;
+    const flaggedSuggestions = filteredSuggestions.filter(
+      (entry) => entry.hours > 12 || !entry.projectValue || entry.notes.trim().length === 0,
+    ).length;
     const lastSalesforceDate = salesforceRows.reduce(
       (latest, entry) => (entry.date > latest ? entry.date : latest),
       "",
@@ -312,8 +431,8 @@ export default function Home() {
   return (
     <main className="shell">
       <datalist id="project-options">
-        {projectOptions.map((project) => (
-          <option key={project.id} value={project.label} />
+        {projectOptions.map((candidate) => (
+          <option key={candidate.idPricingStructure} value={candidate.label} />
         ))}
       </datalist>
       <header className="topbar">
@@ -349,6 +468,21 @@ export default function Home() {
         </div>
       </section>
 
+      <section className="rules-strip" aria-label="Current automation rules">
+        <div>
+          <strong>Project source</strong>
+          <span>Flow filters: active, non-parent, non-template TaskRay projects; label is Name, value is Id_Pricing_Structure__c.</span>
+        </div>
+        <div>
+          <strong>Calendar filters</strong>
+          <span>Declined, Focus Time, Home, and OOO entries are ignored before suggestions are built.</span>
+        </div>
+        <div>
+          <strong>Payload logic</strong>
+          <span>Record type and time type are derived from project label and pricing structure.</span>
+        </div>
+      </section>
+
       <section className="panel">
         <div className="section-heading">
           <div>
@@ -375,8 +509,8 @@ export default function Home() {
           </div>
         </div>
         <p className="table-note">
-          Default starts the day after the last Salesforce entry. Meetings that overlapped Out of
-          Office blocks were excluded from the suggestion set.
+          OOO is no longer suggested as time. Same-day calendar entries with the same title should be
+          consolidated into one row before review.
         </p>
         <div className="table-wrap">
           <table>
@@ -388,75 +522,126 @@ export default function Home() {
                 <th>Billable</th>
                 <th>Activity Type</th>
                 <th>Notes</th>
+                <th>Derived</th>
               </tr>
             </thead>
             <tbody>
-              {filteredSuggestions.map((entry) => (
-                <tr key={entry.id} className={entry.hours > 12 || !entry.projectId ? "review-row" : ""}>
-                  <td>
-                    <input
-                      type="date"
-                      value={entry.date}
-                      onChange={(event) => updateSuggestion(entry.id, { date: event.target.value })}
-                    />
-                  </td>
-                  <td>
-                    <ProjectLookup
-                      label="Project"
-                      value={entry.projectLabel}
-                      onChange={(project) =>
-                        updateSuggestion(entry.id, {
-                          projectId: project.id,
-                          projectLabel: project.label,
-                        })
-                      }
-                    />
-                  </td>
-                  <td>
-                    <input
-                      className="hours"
-                      type="number"
-                      min="0"
-                      step="0.25"
-                      value={entry.hours}
-                      onChange={(event) =>
-                        updateSuggestion(entry.id, { hours: Number(event.target.value) })
-                      }
-                    />
-                  </td>
-                  <td className="checkbox-cell">
-                    <input
-                      type="checkbox"
-                      checked={entry.billable}
-                      onChange={(event) =>
-                        updateSuggestion(entry.id, { billable: event.target.checked })
-                      }
-                    />
-                  </td>
-                  <td>
-                    <select
-                      value={entry.activityType}
-                      onChange={(event) =>
-                        updateSuggestion(entry.id, { activityType: event.target.value })
-                      }
-                    >
-                      {activityTypes.map((type) => (
-                        <option key={type} value={type}>
-                          {type}
-                        </option>
-                      ))}
-                    </select>
-                  </td>
-                  <td>
-                    <textarea
-                      value={entry.notes}
-                      onChange={(event) => updateSuggestion(entry.id, { notes: event.target.value })}
-                    />
-                  </td>
-                </tr>
-              ))}
+              {filteredSuggestions.map((entry) => {
+                const selectedProject = projectForEntry(entry);
+                return (
+                  <tr key={entry.id} className={entry.hours > 12 || !entry.projectValue ? "review-row" : ""}>
+                    <td>
+                      <input
+                        type="date"
+                        value={entry.date}
+                        onChange={(event) => updateSuggestion(entry.id, { date: event.target.value })}
+                      />
+                    </td>
+                    <td>
+                      <ProjectLookup
+                        label="Project"
+                        value={entry.projectLabel}
+                        onChange={(selected) =>
+                          updateSuggestion(entry.id, {
+                            projectValue: selected.idPricingStructure,
+                            projectLabel: selected.label,
+                          })
+                        }
+                      />
+                    </td>
+                    <td>
+                      <input
+                        className="hours"
+                        type="number"
+                        min="0"
+                        step="0.25"
+                        value={entry.hours}
+                        onChange={(event) =>
+                          updateSuggestion(entry.id, { hours: Number(event.target.value) })
+                        }
+                      />
+                    </td>
+                    <td className="checkbox-cell">
+                      <input
+                        aria-label={`Billable ${entry.projectLabel}`}
+                        type="checkbox"
+                        checked={entry.billable}
+                        onChange={(event) =>
+                          updateSuggestion(entry.id, { billable: event.target.checked })
+                        }
+                      />
+                    </td>
+                    <td>
+                      <select
+                        value={entry.activityType}
+                        onChange={(event) =>
+                          updateSuggestion(entry.id, { activityType: event.target.value })
+                        }
+                      >
+                        {activityTypes.map((type) => (
+                          <option key={type} value={type}>
+                            {type}
+                          </option>
+                        ))}
+                      </select>
+                    </td>
+                    <td>
+                      <textarea
+                        value={entry.notes}
+                        onChange={(event) => updateSuggestion(entry.id, { notes: event.target.value })}
+                      />
+                    </td>
+                    <td className="derived-cell">
+                      <span>{selectedProject?.pricingStructure ?? "Unmatched project"}</span>
+                      <span>{timeTypeForEntry(entry)}</span>
+                      <span>{recordTypeForEntry(entry).replaceAll("_", " ")}</span>
+                    </td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
+        </div>
+      </section>
+
+      <section className="panel diagnostics-panel">
+        <div className="section-heading">
+          <div>
+            <p className="eyebrow">Calendar Diagnostics</p>
+            <h2>Source Check</h2>
+          </div>
+        </div>
+        <p className="table-note">
+          This shows what the calendar pull saw for the selected suggestion dates, so missing coding
+          blocks are visible as source gaps instead of silently disappearing.
+        </p>
+        <div className="diagnostics-grid">
+          {filteredDiagnostics.map((entry) => (
+            <article key={entry.date} className="diagnostic-card">
+              <div>
+                <strong>{entry.date}</strong>
+                <span>{entry.notes}</span>
+              </div>
+              <dl>
+                <div>
+                  <dt>Pulled</dt>
+                  <dd>{entry.pulled}</dd>
+                </div>
+                <div>
+                  <dt>Included</dt>
+                  <dd>{entry.included}</dd>
+                </div>
+                <div>
+                  <dt>Solo work</dt>
+                  <dd>{entry.soloWorkBlocks}</dd>
+                </div>
+                <div>
+                  <dt>Ignored</dt>
+                  <dd>{entry.ignoredHome + entry.ignoredOoo + entry.ignoredFocus + entry.ignoredDeclined}</dd>
+                </div>
+              </dl>
+            </article>
+          ))}
         </div>
       </section>
 
@@ -482,8 +667,12 @@ export default function Home() {
           <ProjectLookup
             label="Project"
             value={manualDraft.projectLabel}
-            onChange={(project) =>
-              setManualDraft({ ...manualDraft, projectId: project.id, projectLabel: project.label })
+            onChange={(selectedProject) =>
+              setManualDraft({
+                ...manualDraft,
+                projectValue: selectedProject.idPricingStructure,
+                projectLabel: selectedProject.label,
+              })
             }
           />
           <label>
@@ -560,8 +749,7 @@ export default function Home() {
           </div>
         </div>
         <p className="table-note">
-          Read-only pull from KicksawProd for TaskRay Time records owned by Kendra Ramey. Sorted by
-          Date descending, then Project and Activity Type.
+          Read-only TaskRay Time rows are sorted by Date descending, then Project and Activity Type.
         </p>
         <div className="table-wrap">
           <table>
@@ -572,6 +760,7 @@ export default function Home() {
                 <th>Hours</th>
                 <th>Billable</th>
                 <th>Activity Type</th>
+                <th>Time Type</th>
                 <th>Notes</th>
                 <th>Record</th>
               </tr>
@@ -584,6 +773,7 @@ export default function Home() {
                   <td className="numeric">{formatHours(entry.hours)}</td>
                   <td>{entry.billable ? "True" : "False"}</td>
                   <td>{entry.activityType}</td>
+                  <td>{entry.timeType || "-"}</td>
                   <td>{entry.notes || "-"}</td>
                   <td className="record-id">{entry.recordId}</td>
                 </tr>

@@ -9,8 +9,11 @@
   --panel-alt: #eef4f1;
   --accent: #0d6b5d;
   --accent-strong: #084a40;
+  --accent-soft: #dcebe7;
   --warning-bg: #fff4d6;
   --warning-line: #d9a441;
+  --info-bg: #f3f6fb;
+  --info-line: #b8c5d8;
 }
 
 @theme inline {
@@ -193,6 +196,34 @@ h2 {
   background: var(--warning-bg);
 }
 
+.rules-strip {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+  margin: 14px 0 0;
+}
+
+.rules-strip > div {
+  display: grid;
+  gap: 6px;
+  min-height: 96px;
+  align-content: start;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--panel);
+  padding: 14px 16px;
+}
+
+.rules-strip strong {
+  font-size: 0.9rem;
+}
+
+.rules-strip span {
+  color: var(--muted);
+  font-size: 0.86rem;
+  line-height: 1.45;
+}
+
 .panel {
   margin-top: 16px;
   padding: 16px;
@@ -274,6 +305,24 @@ tr.review-row td {
   background: #fffaf0;
 }
 
+.derived-cell {
+  display: grid;
+  min-width: 190px;
+  gap: 6px;
+}
+
+.derived-cell span {
+  width: fit-content;
+  max-width: 100%;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--accent-soft);
+  color: var(--accent-strong);
+  font-size: 0.76rem;
+  font-weight: 800;
+  padding: 4px 8px;
+}
+
 .hours,
 .numeric {
   text-align: right;
@@ -302,6 +351,67 @@ tr.review-row td {
   grid-column: span 1;
 }
 
+.diagnostics-panel {
+  background: var(--info-bg);
+}
+
+.diagnostics-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.diagnostic-card {
+  display: grid;
+  gap: 14px;
+  border: 1px solid var(--info-line);
+  border-radius: 8px;
+  background: #ffffff;
+  padding: 14px;
+}
+
+.diagnostic-card > div {
+  display: grid;
+  gap: 6px;
+}
+
+.diagnostic-card strong {
+  font-size: 1rem;
+}
+
+.diagnostic-card span {
+  color: var(--muted);
+  font-size: 0.88rem;
+  line-height: 1.45;
+}
+
+.diagnostic-card dl {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+  margin: 0;
+}
+
+.diagnostic-card dl div {
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--panel-alt);
+  padding: 8px;
+}
+
+.diagnostic-card dt {
+  color: var(--muted);
+  font-size: 0.7rem;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.diagnostic-card dd {
+  margin: 4px 0 0;
+  font-size: 1.3rem;
+  font-weight: 800;
+}
+
 @media (max-width: 1040px) {
   .topbar,
   .section-heading {
@@ -309,7 +419,9 @@ tr.review-row td {
     align-items: stretch;
   }
 
-  .metrics {
+  .metrics,
+  .rules-strip,
+  .diagnostics-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
@@ -326,7 +438,10 @@ tr.review-row td {
 
   .metrics,
   .manual-grid,
-  .date-filters {
+  .date-filters,
+  .rules-strip,
+  .diagnostics-grid,
+  .diagnostic-card dl {
     grid-template-columns: 1fr;
   }
 
