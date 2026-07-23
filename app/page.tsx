@@ -1176,6 +1176,25 @@ function storedDeliveryTeam(): DeliveryTeam {
   return deliveryTeams.includes(stored as DeliveryTeam) ? (stored as DeliveryTeam) : defaultDeliveryTeam;
 }
 
+function storedDefaultProject(): Project {
+  if (typeof window === "undefined") return blankProject();
+  try {
+    const stored = window.localStorage.getItem("timeLogging.defaultProject");
+    if (!stored) return blankProject();
+    const parsed = JSON.parse(stored) as Partial<Project>;
+    return {
+      id: parsed.id ?? "",
+      label: parsed.label ?? "",
+      idPricingStructure: parsed.idPricingStructure ?? "",
+      pricingStructure: parsed.pricingStructure ?? "Capacity",
+      taskId: parsed.taskId,
+      deliveryTeam: parsed.deliveryTeam,
+    };
+  } catch {
+    return blankProject();
+  }
+}
+
 function mergeProjectOptions(...projectLists: Project[][]) {
   const grouped = new Map<string, Project>();
   for (const projectList of projectLists) {
@@ -1187,9 +1206,45 @@ function mergeProjectOptions(...projectLists: Project[][]) {
   return Array.from(grouped.values()).sort((a, b) => a.label.localeCompare(b.label));
 }
 
+function blankProject(): Project {
+  return {
+    id: "",
+    label: "",
+    idPricingStructure: "",
+    pricingStructure: "Capacity",
+  };
+}
+
+function shouldUseDefaultProject(entry: TimeEntry) {
+  return (
+    entry.source === "Calendar" &&
+    !entry.projectValue &&
+    !entry.projectLabel.trim() &&
+    entry.activityType !== "People and Team Activities"
+  );
+}
+
+function applyDefaultProjectToEntry(entry: TimeEntry, defaultProject: Project) {
+  if (!defaultProject.idPricingStructure || !shouldUseDefaultProject(entry)) return entry;
+
+  return {
+    ...entry,
+    projectValue: defaultProject.idPricingStructure,
+    projectLabel: defaultProject.label,
+    billable: billableForProject(defaultProject, entry.billable),
+    activityType: activityTypeForProject(defaultProject.label, entry.activityType),
+    taskId: defaultProject.taskId,
+  };
+}
+
+function applyDefaultProjectToSuggestions(entries: TimeEntry[], defaultProject: Project) {
+  return entries.map((entry) => applyDefaultProjectToEntry(entry, defaultProject));
+}
+
 export default function Home() {
   const [deliveryTeam, setDeliveryTeam] = useState<DeliveryTeam>(storedDeliveryTeam);
   const [availableProjects, setAvailableProjects] = useState(projectOptions);
+  const [defaultProject, setDefaultProject] = useState<Project>(storedDefaultProject);
   const [suggestionStart, setSuggestionStart] = useState(() => defaultSuggestionStartFor(salesforceRows));
   const [suggestionEnd, setSuggestionEnd] = useState(defaultSuggestionEnd);
   const [salesforceStart, setSalesforceStart] = useState(monthStart);
@@ -1227,6 +1282,7 @@ export default function Home() {
     () =>
       mergeProjectOptions(
         availableProjects,
+        defaultProject.label ? [defaultProject] : [],
         suggestions
           .map((entry) => ({
             id: projectIdFromValue(entry.projectValue),
@@ -1237,7 +1293,7 @@ export default function Home() {
           }))
           .filter((project) => project.label),
       ),
-    [availableProjects, suggestions],
+    [availableProjects, defaultProject, suggestions],
   );
   const calendarFile = integrationStatus?.providers.google.localFile ?? ".local/calendar-events.json";
   const calendarLastSyncedAt = integrationStatus?.providers.google.lastSyncedAt ?? null;
@@ -1320,6 +1376,15 @@ export default function Home() {
     loadProjectOptions();
   }, [deliveryTeam]);
 
+  useEffect(() => {
+    if (defaultProject.label.trim()) {
+      window.localStorage.setItem("timeLogging.defaultProject", JSON.stringify(defaultProject));
+    } else {
+      window.localStorage.removeItem("timeLogging.defaultProject");
+    }
+    setSuggestions((current) => applyDefaultProjectToSuggestions(current, defaultProject));
+  }, [defaultProject]);
+
   function updateSuggestion(id: string, updates: Partial<TimeEntry>) {
     setSuggestions((current) =>
       current.map((entry) => {
@@ -1381,7 +1446,10 @@ export default function Home() {
       const calendarBody = body as CalendarEventResponse;
       setSuggestions([
         ...manualEntries,
-        ...buildCalendarSuggestions(startDate, endDate, calendarBody.records),
+        ...applyDefaultProjectToSuggestions(
+          buildCalendarSuggestions(startDate, endDate, calendarBody.records),
+          defaultProject,
+        ),
       ]);
       if (calendarBody.lastSyncedAt || calendarBody.localFile) {
         setIntegrationStatus((current) =>
@@ -1874,6 +1942,21 @@ export default function Home() {
                 </option>
               ))}
             </select>
+          </label>
+          <label className="default-project-control">
+            Default Project
+            <span className="default-project-row">
+              <ProjectLookup
+                label="Default project"
+                value={defaultProject.label}
+                options={projectLookupOptions}
+                showLabel={false}
+                onChange={(selected) => setDefaultProject(selected)}
+              />
+              <button type="button" onClick={() => setDefaultProject(blankProject())}>
+                Clear
+              </button>
+            </span>
           </label>
           <div className="date-filters">
             <label>

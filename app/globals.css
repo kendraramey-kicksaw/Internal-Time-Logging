@@ -548,7 +548,7 @@ h2 {
 
 .suggested-controls {
   display: grid;
-  grid-template-columns: minmax(150px, 190px) auto repeat(3, max-content);
+  grid-template-columns: minmax(140px, 170px) minmax(280px, 1fr) auto repeat(3, max-content);
   align-items: end;
   gap: 10px;
   margin-bottom: 14px;
@@ -560,6 +560,16 @@ h2 {
 
 .team-filter {
   min-width: 0;
+}
+
+.default-project-control {
+  min-width: 0;
+}
+
+.default-project-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
 }
 
 .table-wrap {
