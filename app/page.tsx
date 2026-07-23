@@ -74,7 +74,7 @@ type SalesforceColumnKey =
 const monthStart = "2026-07-01";
 const monthEnd = "2026-07-31";
 const defaultSuggestionStart = "2026-07-11";
-const defaultSuggestionEnd = "2026-07-21";
+const defaultSuggestionEnd = "2026-07-23";
 const ownerId = "0054T000001in8HQAQ";
 const salesforceBaseUrl = "https://kicksaw.my.salesforce.com";
 const initialSalesforceColumnWidths: Record<SalesforceColumnKey, number> = {
@@ -181,6 +181,13 @@ const calendarEventSeed: CalendarEvent[] = [
   calendarEvent("2026-07-21-review", "Migration Review", "2026-07-21T10:00:00-04:00", "2026-07-21T10:30:00-04:00", CRISIS_PROJECT, "Coding and Configuration"),
   calendarEvent("2026-07-21-uat", "OnSolve | Crisis24 | Kicksaw - Tech Team Daily UAT Triage", "2026-07-21T10:30:00-04:00", "2026-07-21T11:00:00-04:00", CRISIS_PROJECT, "Meeting"),
   calendarEvent("2026-07-21-troubleshooting", "Migration troubleshooting, Smoke Testing PC, Gearset", "2026-07-21T11:00:00-04:00", "2026-07-21T16:30:00-04:00", CRISIS_PROJECT, "Coding and Configuration"),
+  calendarEvent("2026-07-23-home", "Home", "2026-07-23T00:00:00-04:00", "2026-07-24T00:00:00-04:00", CRISIS_PROJECT, "Coding and Configuration", true, null, "transparent"),
+  calendarEvent("2026-07-23-standup", "OnSolve | Kicksaw - INTERNAL - Daily Stand-Up", "2026-07-23T09:30:00-04:00", "2026-07-23T10:00:00-04:00", CRISIS_PROJECT, "Meeting"),
+  calendarEvent("2026-07-23-uat-a", "OnSolve Crisis24 - Kicksaw - Daily UAT Triage", "2026-07-23T10:00:00-04:00", "2026-07-23T10:30:00-04:00", CRISIS_PROJECT, "Meeting"),
+  calendarEvent("2026-07-23-uat-b", "OnSolve | Crisis24 | Kicksaw - Tech Team Daily UAT Triage", "2026-07-23T10:30:00-04:00", "2026-07-23T11:00:00-04:00", CRISIS_PROJECT, "Meeting"),
+  calendarEvent("2026-07-23-permissions", "Permission: Review and Reset", "2026-07-23T12:00:00-04:00", "2026-07-23T12:30:00-04:00", CRISIS_PROJECT, "Meeting"),
+  calendarEvent("2026-07-23-all-hands", "All Hands", "2026-07-23T12:30:00-04:00", "2026-07-23T13:30:00-04:00", INTERNAL_PROJECT, "People and Team Activities", false),
+  calendarEvent("2026-07-23-kendra-adam", "Kendra / Adam", "2026-07-23T13:30:00-04:00", "2026-07-23T14:00:00-04:00", CRISIS_PROJECT, "Meeting"),
 ];
 
 function project(id: string, label: string, pricingStructure: PricingStructure): Project {
