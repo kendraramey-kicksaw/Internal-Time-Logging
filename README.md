@@ -1,14 +1,20 @@
-# vinext-starter
+# Internal Time Logging
 
-A clean full-stack starter running on
-[vinext](https://github.com/cloudflare/vinext), with optional Cloudflare D1 and
-Drizzle support.
+Calendar-assisted TaskRay time entry review and import for Kicksaw users.
 
 ## Prerequisites
 
 - Node.js `>=22.13.0`
+- Salesforce CLI for local phase-1 use
 
-## Quick Start
+## Internal User Start Here
+
+If Kendra shared this repository with you, start with
+[docs/internal-user-onboarding.md](docs/internal-user-onboarding.md). It walks
+through accepting the GitHub invite, opening the repo in Codex, authenticating
+Salesforce, syncing Google Calendar data, and running the app locally.
+
+## Developer Quick Start
 
 ```bash
 npm install
@@ -18,9 +24,8 @@ npm run build
 
 ## Local CLI Mode
 
-For phase-1 personal use without org-wide OAuth apps, run the app locally with
-Salesforce CLI as the authenticated user. See
-[docs/local-cli-setup.md](docs/local-cli-setup.md).
+For phase-1 use without org-wide OAuth apps, run the app locally with Salesforce
+CLI as the authenticated user. See [docs/local-cli-setup.md](docs/local-cli-setup.md).
 
 This starter does not use `wrangler.jsonc`.
 

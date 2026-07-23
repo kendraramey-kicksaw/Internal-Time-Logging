@@ -4,6 +4,10 @@ Phase 1 runs the Time Logging app locally and uses each user's own Salesforce CL
 login. Google Calendar events come from a local file that Codex can refresh from
 the user's connected Google Calendar integration.
 
+Internal teammates who are starting from the GitHub invite email should use
+[internal-user-onboarding.md](internal-user-onboarding.md) first. This file is
+the technical reference behind those steps.
+
 ## One-Time Setup for You
 
 1. Install Salesforce CLI if it is not already installed:
