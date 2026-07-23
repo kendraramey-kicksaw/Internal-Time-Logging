@@ -1078,6 +1078,7 @@ export default function Home() {
   const [isImporting, setIsImporting] = useState(false);
   const [isRefreshingCalendar, setIsRefreshingCalendar] = useState(false);
   const [suggestionStartWasEdited, setSuggestionStartWasEdited] = useState(false);
+  const [liveSalesforceDefaultApplied, setLiveSalesforceDefaultApplied] = useState(false);
   const [suggestionSort, setSuggestionSort] = useState<SortConfig<SuggestedSortKey>>({
     key: "date",
     direction: "asc",
@@ -1120,11 +1121,6 @@ export default function Home() {
     loadSalesforceRows(controller.signal);
     return () => controller.abort();
   }, [salesforceEnd, salesforceStart]);
-
-  useEffect(() => {
-    if (suggestionStartWasEdited) return;
-    setSuggestionStart(defaultSuggestionStartFor(liveSalesforceRows));
-  }, [liveSalesforceRows, suggestionStartWasEdited]);
 
   function updateSuggestion(id: string, updates: Partial<TimeEntry>) {
     setSuggestions((current) =>
@@ -1196,7 +1192,18 @@ export default function Home() {
 
       if (!response.ok) throw new Error(body.error ?? "Salesforce refresh failed.");
 
-      setLiveSalesforceRows((body as SalesforceTimeEntryResponse).records);
+      const records = (body as SalesforceTimeEntryResponse).records;
+      setLiveSalesforceRows(records);
+      if (!liveSalesforceDefaultApplied && !suggestionStartWasEdited) {
+        const nextStart = defaultSuggestionStartFor(records);
+        const manualEntries = suggestions.filter((entry) => entry.source === "Manual");
+        setSuggestionStart(nextStart);
+        setSuggestions([
+          ...manualEntries,
+          ...buildCalendarSuggestions(nextStart, suggestionEnd),
+        ]);
+        setLiveSalesforceDefaultApplied(true);
+      }
       setSalesforceSyncStatus("Salesforce live");
     } catch (error) {
       if (error instanceof DOMException && error.name === "AbortError") return;
