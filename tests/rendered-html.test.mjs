@@ -51,9 +51,7 @@ test("server-renders the calendar time-entry workspace", async () => {
   assert.match(html, /Hours This Month by Project/);
   assert.match(html, /Suggested entry rules/);
   assert.match(html, /Actions/);
-  assert.match(html, /Remove/);
-  assert.match(html, /Feature &amp; PC Sync/);
-  assert.match(html, /UAT Tickets/);
+  assert.match(html, /Add Entry/);
   assert.match(html, /TIME-178790/);
   assert.match(html, /Build -Deployments to PC/);
   assert.match(html, /Crisis24 - OnSolve Migration - \(SOPS\)/);

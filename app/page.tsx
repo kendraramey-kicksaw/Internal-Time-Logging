@@ -784,7 +784,7 @@ function shouldIgnoreCalendarEvent(event: CalendarEvent) {
   );
 }
 
-function buildCalendarSuggestions(startDate: string, endDate: string, events = calendarEventSeed) {
+function buildCalendarSuggestions(startDate: string, endDate: string, events: CalendarEvent[] = []) {
   const grouped = new Map<string, { entry: TimeEntry; titles: Set<string> }>();
 
   for (const event of events) {
@@ -1194,9 +1194,7 @@ export default function Home() {
   const [suggestionEnd, setSuggestionEnd] = useState(defaultSuggestionEnd);
   const [salesforceStart, setSalesforceStart] = useState(monthStart);
   const [salesforceEnd, setSalesforceEnd] = useState(monthEnd);
-  const [suggestions, setSuggestions] = useState(() =>
-    buildCalendarSuggestions(defaultSuggestionStart, defaultSuggestionEnd),
-  );
+  const [suggestions, setSuggestions] = useState<TimeEntry[]>([]);
   const [liveSalesforceRows, setLiveSalesforceRows] = useState(salesforceRows);
   const [manualDraft, setManualDraft] = useState(blankEntry());
   const [salesforceSyncStatus, setSalesforceSyncStatus] = useState("Salesforce snapshot loaded");
@@ -1363,9 +1361,18 @@ export default function Home() {
     setIsRefreshingCalendar(true);
     setCalendarSyncStatus("Refreshing Suggestions...");
 
+    await loadCalendarSuggestionsForRange(suggestionStart, suggestionEnd, manualEntries);
+    setIsRefreshingCalendar(false);
+  }
+
+  async function loadCalendarSuggestionsForRange(
+    startDate: string,
+    endDate: string,
+    manualEntries = suggestions.filter((entry) => entry.source === "Manual"),
+  ) {
     try {
       const response = await fetch(
-        apiUrl(`/api/calendar/events?start=${suggestionStart}&end=${suggestionEnd}&deliveryTeam=${deliveryTeam}`),
+        apiUrl(`/api/calendar/events?start=${startDate}&end=${endDate}&deliveryTeam=${deliveryTeam}`),
       );
       const body = await response.json();
 
@@ -1374,7 +1381,7 @@ export default function Home() {
       const calendarBody = body as CalendarEventResponse;
       setSuggestions([
         ...manualEntries,
-        ...buildCalendarSuggestions(suggestionStart, suggestionEnd, calendarBody.records),
+        ...buildCalendarSuggestions(startDate, endDate, calendarBody.records),
       ]);
       if (calendarBody.lastSyncedAt || calendarBody.localFile) {
         setIntegrationStatus((current) =>
@@ -1397,8 +1404,6 @@ export default function Home() {
       setCalendarSyncStatus(calendarBody.warning ?? "Suggestions refreshed from local calendar file");
     } catch (error) {
       setCalendarSyncStatus(error instanceof Error ? error.message : "Suggestion refresh failed.");
-    } finally {
-      setIsRefreshingCalendar(false);
     }
   }
 
@@ -1542,10 +1547,7 @@ export default function Home() {
         const nextStart = defaultSuggestionStartFor(records);
         const manualEntries = suggestions.filter((entry) => entry.source === "Manual");
         setSuggestionStart(nextStart);
-        setSuggestions([
-          ...manualEntries,
-          ...buildCalendarSuggestions(nextStart, suggestionEnd),
-        ]);
+        await loadCalendarSuggestionsForRange(nextStart, suggestionEnd, manualEntries);
         setLiveSalesforceDefaultApplied(true);
       }
       setSalesforceSyncStatus("Salesforce live");
