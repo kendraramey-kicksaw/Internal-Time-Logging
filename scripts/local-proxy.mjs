@@ -1,5 +1,5 @@
 import { execFile } from "node:child_process";
-import { existsSync, readFileSync, unlinkSync } from "node:fs";
+import { existsSync, readFileSync, statSync, unlinkSync } from "node:fs";
 import { createServer } from "node:http";
 import { resolve } from "node:path";
 import { promisify } from "node:util";
@@ -97,6 +97,7 @@ async function integrationStatus() {
     (org) => ({ connected: true, username: org.username }),
     () => ({ connected: false, username: null }),
   );
+  const calendarInfo = calendarFileInfo();
 
   return {
     user: {
@@ -106,8 +107,9 @@ async function integrationStatus() {
     providers: {
       google: {
         configured: false,
-        connected: existsSync(calendarFile),
+        connected: calendarInfo.exists,
         localFile: calendarFile,
+        lastSyncedAt: calendarInfo.lastSyncedAt,
       },
       salesforce: {
         configured: false,
@@ -228,10 +230,13 @@ async function gitExitOk(args) {
 }
 
 async function calendarEvents(url) {
-  if (!existsSync(calendarFile)) {
+  const calendarInfo = calendarFileInfo();
+  if (!calendarInfo.exists) {
     return {
       records: [],
       warning: `Calendar event file not found: ${calendarFile}`,
+      localFile: calendarFile,
+      lastSyncedAt: null,
     };
   }
 
@@ -242,6 +247,8 @@ async function calendarEvents(url) {
   const deliveryTeam = deliveryTeamFromUrl(url);
 
   return {
+    localFile: calendarFile,
+    lastSyncedAt: calendarInfo.lastSyncedAt,
     records: await Promise.all(
       records
         .filter((event) => {
@@ -250,6 +257,20 @@ async function calendarEvents(url) {
         })
         .map((event) => normalizeLocalCalendarEvent(event, deliveryTeam)),
     ),
+  };
+}
+
+function calendarFileInfo() {
+  if (!existsSync(calendarFile)) {
+    return {
+      exists: false,
+      lastSyncedAt: null,
+    };
+  }
+
+  return {
+    exists: true,
+    lastSyncedAt: statSync(calendarFile).mtime.toISOString(),
   };
 }
 

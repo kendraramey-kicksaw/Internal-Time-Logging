@@ -42,6 +42,9 @@ type SalesforceTimeEntryResponse = {
 
 type CalendarEventResponse = {
   records: CalendarEvent[];
+  localFile?: string;
+  lastSyncedAt?: string | null;
+  warning?: string;
 };
 
 type ProjectResponse = {
@@ -62,6 +65,8 @@ type ProviderConnectionStatus = {
   configured: boolean;
   connected: boolean;
   fallbackConfigured?: boolean;
+  localFile?: string;
+  lastSyncedAt?: string | null;
 };
 
 type IntegrationStatusResponse = {
@@ -881,6 +886,19 @@ function formatHours(hours: number) {
   }).format(hours);
 }
 
+function formatDateTime(value?: string | null) {
+  if (!value) return "Not synced yet";
+  return new Intl.DateTimeFormat("en-US", {
+    dateStyle: "medium",
+    timeStyle: "short",
+  }).format(new Date(value));
+}
+
+function fileAgeHours(value?: string | null) {
+  if (!value) return null;
+  return (Date.now() - new Date(value).getTime()) / 3_600_000;
+}
+
 function projectForLabel(label: string, options = projectOptions) {
   return options.find((candidate) => candidate.label === label);
 }
@@ -1203,6 +1221,19 @@ export default function Home() {
       ),
     [availableProjects, suggestions],
   );
+  const calendarFile = integrationStatus?.providers.google.localFile ?? ".local/calendar-events.json";
+  const calendarLastSyncedAt = integrationStatus?.providers.google.lastSyncedAt ?? null;
+  const calendarAgeHours = fileAgeHours(calendarLastSyncedAt);
+  const usesLocalCalendarFile =
+    Boolean(integrationStatus?.providers.google.localFile) || !integrationStatus?.providers.google.configured;
+  const calendarFileState =
+    !usesLocalCalendarFile
+      ? "fresh"
+      : calendarAgeHours === null
+      ? "missing"
+      : calendarAgeHours > 8
+        ? "stale"
+        : "fresh";
 
   const filteredSuggestions = useMemo(
     () =>
@@ -1310,7 +1341,7 @@ export default function Home() {
   async function refreshCalendarSuggestions() {
     const manualEntries = suggestions.filter((entry) => entry.source === "Manual");
     setIsRefreshingCalendar(true);
-    setCalendarSyncStatus("Refreshing Calendar...");
+    setCalendarSyncStatus("Refreshing Suggestions...");
 
     try {
       const response = await fetch(
@@ -1320,16 +1351,61 @@ export default function Home() {
 
       if (!response.ok) throw new Error(body.error ?? "Calendar refresh failed.");
 
+      const calendarBody = body as CalendarEventResponse;
       setSuggestions([
         ...manualEntries,
-        ...buildCalendarSuggestions(suggestionStart, suggestionEnd, (body as CalendarEventResponse).records),
+        ...buildCalendarSuggestions(suggestionStart, suggestionEnd, calendarBody.records),
       ]);
-      setCalendarSyncStatus("Calendar live");
+      if (calendarBody.lastSyncedAt || calendarBody.localFile) {
+        setIntegrationStatus((current) =>
+          current
+            ? {
+                ...current,
+                providers: {
+                  ...current.providers,
+                  google: {
+                    ...current.providers.google,
+                    connected: Boolean(calendarBody.lastSyncedAt),
+                    localFile: calendarBody.localFile ?? current.providers.google.localFile,
+                    lastSyncedAt: calendarBody.lastSyncedAt ?? current.providers.google.lastSyncedAt,
+                  },
+                },
+              }
+            : current,
+        );
+      }
+      setCalendarSyncStatus(calendarBody.warning ?? "Suggestions refreshed from local calendar file");
     } catch (error) {
-      setCalendarSyncStatus(error instanceof Error ? error.message : "Calendar refresh failed.");
+      setCalendarSyncStatus(error instanceof Error ? error.message : "Suggestion refresh failed.");
     } finally {
       setIsRefreshingCalendar(false);
     }
+  }
+
+  async function copyCodexCalendarSyncPrompt() {
+    const prompt = [
+      "Using my connected Google Calendar integration, fetch my primary calendar events for the Internal Time Logging app.",
+      `Date range: ${suggestionStart} through ${suggestionEnd}.`,
+      `My selected Delivery Team is ${deliveryTeam}.`,
+      `Write the result to ${calendarFile}.`,
+      "Use JSON with a top-level \"records\" array.",
+      "Each record must have: id, title, start, end, project, activityType, billable, responseStatus, transparency, and attendeeEmails.",
+      "attendeeEmails must include every non-resource attendee email when available so the app can match external client domains to active Salesforce projects for my selected Delivery Team.",
+      "Use these calendar rules:",
+      "- Exclude declined events.",
+      "- Exclude Focus Time.",
+      "- Exclude OOO/out-of-office events.",
+      "- Exclude transparent, birthday, and FYI events.",
+      "- Mark internal culture/team events as People and Team Activities.",
+      "- Mark meetings with DJ and me only as internal.",
+      "- For external meetings, include attendeeEmails and leave project blank if you cannot confidently identify it.",
+      "- For solo work blocks, include them as Coding and Configuration and leave project blank if you cannot confidently identify it.",
+      "After writing the file, tell me to click Refresh Suggestions in the app.",
+      "Do not edit app source code for this calendar sync.",
+    ].join("\n");
+
+    await navigator.clipboard.writeText(prompt);
+    setCalendarSyncStatus("Codex calendar sync prompt copied.");
   }
 
   async function loadIntegrationStatus() {
@@ -1458,7 +1534,11 @@ export default function Home() {
 
   function calendarStatusClass() {
     if (calendarSyncStatus === "Calendar live") return "sync-status live";
-    if (calendarSyncStatus === "Refreshing Calendar..." || calendarSyncStatus === "Calendar snapshot loaded") {
+    if (
+      calendarSyncStatus === "Refreshing Calendar..." ||
+      calendarSyncStatus === "Refreshing Suggestions..." ||
+      calendarSyncStatus === "Calendar snapshot loaded"
+    ) {
       return "sync-status";
     }
     return "sync-status failed";
@@ -1590,9 +1670,13 @@ export default function Home() {
               <span>Google Calendar</span>
               <strong className={integrationClass(integrationStatus?.providers.google)}>
                 {integrationStatus?.providers.google.connected
-                  ? "Connected"
+                  ? integrationStatus?.providers.google.localFile
+                    ? "Local file synced"
+                    : "Connected"
                   : integrationStatus?.providers.google.configured
                     ? "Ready to connect"
+                    : integrationStatus?.providers.google.localFile
+                      ? "Needs Codex sync"
                     : "Needs OAuth setup"}
               </strong>
             </div>
@@ -1734,11 +1818,16 @@ export default function Home() {
                     <li>Same-day calendar entries with the same project, billable value, and activity type are consolidated.</li>
                     <li>Calendar titles become Notes, with duplicate same-day titles listed once.</li>
                     <li>Kicksaw projects are non-billable and the checkbox is locked.</li>
-                    <li>Refresh Calendar regenerates the selected date range while preserving manual rows.</li>
+                    <li>Sync Calendar with Codex rewrites the local file; Refresh Suggestions rereads it.</li>
                   </ul>
                 </div>
               </details>
             </div>
+            <p className={`calendar-file-state ${calendarFileState}`}>
+              {usesLocalCalendarFile
+                ? `Calendar file last synced: ${formatDateTime(calendarLastSyncedAt)}`
+                : "Google Calendar sync: live connection"}
+            </p>
           </div>
           <div className="date-filters">
             <label>
@@ -1764,8 +1853,11 @@ export default function Home() {
             </label>
           </div>
           <p className={calendarStatusClass()}>{calendarSyncStatus}</p>
+          <button type="button" onClick={copyCodexCalendarSyncPrompt}>
+            Sync Calendar with Codex
+          </button>
           <button type="button" onClick={refreshCalendarSuggestions} disabled={isRefreshingCalendar}>
-            {isRefreshingCalendar ? "Refreshing..." : "Refresh Calendar"}
+            {isRefreshingCalendar ? "Refreshing..." : "Refresh Suggestions"}
           </button>
         </div>
         <div className="table-wrap">

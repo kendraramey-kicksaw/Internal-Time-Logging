@@ -67,7 +67,7 @@ Use the app rules for categorizing calendar time:
 - People and Team Activities use Kicksaw - Internal Time Tracking.
 - Meetings with DJ and me only are internal.
 
-Once the file is written, have me click Refresh Calendar in the app.
+Once the file is written, have me click Refresh Suggestions in the app.
 Do not use Kendra's Salesforce credentials or owner id. The imported Salesforce records must use my authenticated Salesforce CLI user.
 ```
 
@@ -93,7 +93,7 @@ Do not use Kendra's Salesforce credentials or owner id. The imported Salesforce 
 
 4. Confirm your Delivery Team is selected at the top of the app.
 5. Ask Codex to refresh your calendar file for the dates you want, including attendee emails.
-6. Click `Refresh Calendar` in the app.
+6. Click `Refresh Suggestions` in the app.
 7. Review, edit, remove, or add suggested rows.
 8. Click `Import to Salesforce`.
 
@@ -111,6 +111,7 @@ Do not use Kendra's Salesforce credentials or owner id. The imported Salesforce 
   sf org login web --alias KicksawProd --instance-url https://login.salesforce.com --set-default
   ```
 
-- If calendar rows do not update, ask Codex to rewrite
-  `.local/calendar-events.json`, then click `Refresh Calendar` again.
+- If calendar rows do not update, use `Sync Calendar with Codex` to copy the
+  date-range prompt, ask Codex to rewrite `.local/calendar-events.json`, then
+  click `Refresh Suggestions` again.
 - Personal calendar data lives under `.local/` and is ignored by Git.

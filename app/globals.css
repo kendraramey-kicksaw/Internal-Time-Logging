@@ -406,6 +406,21 @@ h2 {
   color: var(--danger);
 }
 
+.calendar-file-state {
+  margin: 8px 0 0;
+  color: var(--muted);
+  font-size: 0.8rem;
+  font-weight: 700;
+}
+
+.calendar-file-state.stale {
+  color: #775d13;
+}
+
+.calendar-file-state.missing {
+  color: var(--danger);
+}
+
 .panel {
   margin-top: 16px;
   padding: 18px;

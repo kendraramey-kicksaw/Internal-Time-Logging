@@ -65,7 +65,7 @@ the technical reference behind those steps.
    Exclude declined, Focus Time, OOO/out-of-office, transparent, birthday, and FYI events.
    ```
 
-9. Select your Delivery Team at the top of the app, then click `Refresh Calendar`. The local proxy rereads
+9. Select your Delivery Team at the top of the app, then click `Refresh Suggestions`. The local proxy rereads
    `.local/calendar-events.json` each time, so any new Codex sync will appear
    after refresh.
 
@@ -117,9 +117,9 @@ the technical reference behind those steps.
    http://localhost:3000
    ```
 
-10. For calendar suggestions, have them connect Google Calendar in Codex and ask
-    Codex to sync their events into their local `.local/calendar-events.json`
-    file using the prompt from the previous section, with their own project path.
+10. For calendar suggestions, have them connect Google Calendar in Codex, click
+    `Sync Calendar with Codex` in the app, and ask Codex to sync their events
+    into their local `.local/calendar-events.json` file using that copied prompt.
 
 ## Notes
 

@@ -40,7 +40,9 @@ test("server-renders the calendar time-entry workspace", async () => {
   assert.match(html, /Salesforce/);
   assert.match(html, /Delivery Team/);
   assert.match(html, /App Updates/);
-  assert.match(html, /Refresh Calendar/);
+  assert.match(html, /Sync Calendar with Codex/);
+  assert.match(html, /Refresh Suggestions/);
+  assert.match(html, /Calendar file last synced/);
   assert.match(html, /Calendar snapshot loaded/);
   assert.match(html, /Time Logged This Week/);
   assert.match(html, /Hours This Month by Project/);
@@ -74,6 +76,7 @@ test("keeps the starter preview out of the production screen", async () => {
   assert.match(page, /TASKRAY__Project__c/);
   assert.match(page, /TASKRAY__Task__c/);
   assert.match(page, /\/api\/calendar\/events/);
+  assert.match(page, /copyCodexCalendarSyncPrompt/);
   assert.match(page, /suggestedStatus/);
   assert.match(page, /manualStatus/);
   assert.match(page, /apiUrl/);
