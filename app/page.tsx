@@ -14,6 +14,7 @@ type Project = {
   pricingStructure: PricingStructure;
   taskId?: string;
   deliveryTeam?: string;
+  websiteDomain?: string;
 };
 
 type TimeEntry = {
@@ -21,6 +22,7 @@ type TimeEntry = {
   date: string;
   projectValue: string;
   projectLabel: string;
+  projectWebsiteDomain?: string;
   hours: number;
   billable: boolean;
   activityType: string;
@@ -708,6 +710,7 @@ function sf(
     date,
     projectValue: selectedProject.idPricingStructure,
     projectLabel: selectedProject.label,
+    projectWebsiteDomain: selectedProject.websiteDomain,
     hours,
     billable,
     activityType,
@@ -763,6 +766,36 @@ function suggested(
     source: "Calendar",
     taskId: selectedProject.taskId,
   };
+}
+
+function normalizeWebsiteDomain(value?: string) {
+  return String(value ?? "").trim().toLowerCase().replace(/^www\./, "");
+}
+
+function sameAccountWebsiteDomain(left?: string, right?: string) {
+  const leftDomain = normalizeWebsiteDomain(left);
+  const rightDomain = normalizeWebsiteDomain(right);
+  return Boolean(leftDomain && rightDomain && leftDomain === rightDomain);
+}
+
+function shouldDefaultCalendarProject(event: CalendarEvent, defaultProject: Project) {
+  if (!defaultProject.idPricingStructure) return false;
+  if (event.activityType === "People and Team Activities") return false;
+  if (event.project.id === INTERNAL_PROJECT.id || event.project.label.includes("Kicksaw")) return false;
+  if (!event.project.idPricingStructure && !event.project.label.trim()) return true;
+  return sameAccountWebsiteDomain(event.project.websiteDomain, defaultProject.websiteDomain);
+}
+
+function applyDefaultProjectToCalendarEvents(events: CalendarEvent[], defaultProject: Project) {
+  return events.map((event) =>
+    shouldDefaultCalendarProject(event, defaultProject)
+      ? {
+          ...event,
+          project: defaultProject,
+          billable: billableForProject(defaultProject, event.billable),
+        }
+      : event,
+  );
 }
 
 function dateFromEvent(event: CalendarEvent) {
@@ -1189,6 +1222,7 @@ function storedDefaultProject(): Project {
       pricingStructure: parsed.pricingStructure ?? "Capacity",
       taskId: parsed.taskId,
       deliveryTeam: parsed.deliveryTeam,
+      websiteDomain: parsed.websiteDomain,
     };
   } catch {
     return blankProject();
@@ -1218,19 +1252,23 @@ function blankProject(): Project {
 function shouldUseDefaultProject(entry: TimeEntry) {
   return (
     entry.source === "Calendar" &&
-    !entry.projectValue &&
-    !entry.projectLabel.trim() &&
-    entry.activityType !== "People and Team Activities"
+    entry.activityType !== "People and Team Activities" &&
+    !entry.projectLabel.includes("Kicksaw")
   );
 }
 
 function applyDefaultProjectToEntry(entry: TimeEntry, defaultProject: Project) {
-  if (!defaultProject.idPricingStructure || !shouldUseDefaultProject(entry)) return entry;
+  const projectIsBlank = !entry.projectValue && !entry.projectLabel.trim();
+  const shouldOverrideSameAccount = sameAccountWebsiteDomain(entry.projectWebsiteDomain, defaultProject.websiteDomain);
+  if (!defaultProject.idPricingStructure || !shouldUseDefaultProject(entry) || (!projectIsBlank && !shouldOverrideSameAccount)) {
+    return entry;
+  }
 
   return {
     ...entry,
     projectValue: defaultProject.idPricingStructure,
     projectLabel: defaultProject.label,
+    projectWebsiteDomain: defaultProject.websiteDomain,
     billable: billableForProject(defaultProject, entry.billable),
     activityType: activityTypeForProject(defaultProject.label, entry.activityType),
     taskId: defaultProject.taskId,
@@ -1290,6 +1328,7 @@ export default function Home() {
             idPricingStructure: entry.projectValue,
             pricingStructure: pricingStructureForEntry(entry),
             taskId: entry.taskId,
+            websiteDomain: entry.projectWebsiteDomain,
           }))
           .filter((project) => project.label),
       ),
@@ -1377,6 +1416,24 @@ export default function Home() {
   }, [deliveryTeam]);
 
   useEffect(() => {
+    if (!defaultProject.label.trim()) return;
+    const hydratedProject = availableProjects.find(
+      (project) =>
+        project.idPricingStructure === defaultProject.idPricingStructure ||
+        project.id === defaultProject.id ||
+        project.label === defaultProject.label,
+    );
+    if (
+      hydratedProject &&
+      (hydratedProject.websiteDomain !== defaultProject.websiteDomain ||
+        hydratedProject.taskId !== defaultProject.taskId ||
+        hydratedProject.idPricingStructure !== defaultProject.idPricingStructure)
+    ) {
+      setDefaultProject(hydratedProject);
+    }
+  }, [availableProjects, defaultProject]);
+
+  useEffect(() => {
     if (defaultProject.label.trim()) {
       window.localStorage.setItem("timeLogging.defaultProject", JSON.stringify(defaultProject));
     } else {
@@ -1446,9 +1503,10 @@ export default function Home() {
       const calendarBody = body as CalendarEventResponse;
       setSuggestions([
         ...manualEntries,
-        ...applyDefaultProjectToSuggestions(
-          buildCalendarSuggestions(startDate, endDate, calendarBody.records),
-          defaultProject,
+        ...buildCalendarSuggestions(
+          startDate,
+          endDate,
+          applyDefaultProjectToCalendarEvents(calendarBody.records, defaultProject),
         ),
       ]);
       if (calendarBody.lastSyncedAt || calendarBody.localFile) {
@@ -2027,6 +2085,7 @@ export default function Home() {
                           updateSuggestion(entry.id, {
                             projectValue: selected.idPricingStructure,
                             projectLabel: selected.label,
+                            projectWebsiteDomain: selected.websiteDomain,
                             billable: billableForProject(selected, entry.billable),
                             activityType: activityTypeForProject(selected.label, entry.activityType),
                             taskId: selected.taskId,
@@ -2139,6 +2198,7 @@ export default function Home() {
                         ...manualDraft,
                         projectValue: selectedProject.idPricingStructure,
                         projectLabel: selectedProject.label,
+                        projectWebsiteDomain: selectedProject.websiteDomain,
                         billable: billableForProject(selectedProject, manualDraft.billable),
                         activityType: activityTypeForProject(selectedProject.label, manualDraft.activityType),
                         taskId: selectedProject.taskId,
