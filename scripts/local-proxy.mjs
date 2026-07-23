@@ -569,7 +569,6 @@ function corsHeaders() {
   return {
     "Access-Control-Allow-Headers": "Content-Type",
     "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
-    "Access-Control-Allow-Origin": "http://localhost:3000",
-    Vary: "Origin",
+    "Access-Control-Allow-Origin": "*",
   };
 }
