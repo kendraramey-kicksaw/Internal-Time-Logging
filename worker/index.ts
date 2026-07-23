@@ -44,6 +44,16 @@ type SalesforceQueryResponse = {
   records: SalesforceTimeRecord[];
 };
 
+type SalesforceCompositeResult = Array<{
+  id?: string;
+  success: boolean;
+  errors?: Array<{
+    fields?: string[];
+    message: string;
+    statusCode: string;
+  }>;
+}>;
+
 // Image security config. SVG sources with .svg extension auto-skip the
 // optimization endpoint on the client side (served directly, no proxy).
 // To route SVGs through the optimizer (with security headers), set
@@ -77,7 +87,7 @@ const worker = {
 
 export default worker;
 
-async function getSalesforceTimeEntries(request: Request, env: Env): Promise<Response> {
+async function getSalesforceTimeEntries(request: Request, env?: Env): Promise<Response> {
   const connection = salesforceConnection(env);
   if (!connection) return jsonResponse({ error: "Salesforce connection is not configured." }, 503);
 
@@ -121,7 +131,7 @@ async function getSalesforceTimeEntries(request: Request, env: Env): Promise<Res
   });
 }
 
-async function createSalesforceTimeEntries(request: Request, env: Env): Promise<Response> {
+async function createSalesforceTimeEntries(request: Request, env?: Env): Promise<Response> {
   const connection = salesforceConnection(env);
   if (!connection) return jsonResponse({ error: "Salesforce connection is not configured." }, 503);
 
@@ -136,7 +146,7 @@ async function createSalesforceTimeEntries(request: Request, env: Env): Promise<
     return jsonResponse({ error: "At least one time entry is required." }, 400);
   }
 
-  const response = await salesforceFetch(
+  const response = await salesforceFetch<SalesforceCompositeResult>(
     env,
     `/services/data/${connection.apiVersion}/composite/sobjects`,
     {
@@ -149,23 +159,33 @@ async function createSalesforceTimeEntries(request: Request, env: Env): Promise<
   );
   if (!response.ok) return response.error;
 
+  if (Array.isArray(response.data) && response.data.some((result) => !result.success)) {
+    return jsonResponse(
+      {
+        error: "Salesforce import failed.",
+        details: response.data,
+      },
+      400,
+    );
+  }
+
   return jsonResponse(response.data, 201);
 }
 
-function salesforceConnection(env: Env) {
-  const instanceUrl = env.SALESFORCE_INSTANCE_URL?.replace(/\/$/, "");
-  const accessToken = env.SALESFORCE_ACCESS_TOKEN;
+function salesforceConnection(env?: Env) {
+  const instanceUrl = (env?.SALESFORCE_INSTANCE_URL ?? process.env.SALESFORCE_INSTANCE_URL)?.replace(/\/$/, "");
+  const accessToken = env?.SALESFORCE_ACCESS_TOKEN ?? process.env.SALESFORCE_ACCESS_TOKEN;
   if (!instanceUrl || !accessToken) return null;
 
   return {
     accessToken,
-    apiVersion: env.SALESFORCE_API_VERSION ?? DEFAULT_SALESFORCE_API_VERSION,
+    apiVersion: env?.SALESFORCE_API_VERSION ?? process.env.SALESFORCE_API_VERSION ?? DEFAULT_SALESFORCE_API_VERSION,
     instanceUrl,
   };
 }
 
 async function salesforceFetch<T>(
-  env: Env,
+  env: Env | undefined,
   path: string,
   init: RequestInit = {},
 ): Promise<{ ok: true; data: T } | { ok: false; error: Response }> {
