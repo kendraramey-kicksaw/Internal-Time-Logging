@@ -1563,9 +1563,26 @@ export default function Home() {
   }
 
   function integrationClass(provider: ProviderConnectionStatus | undefined) {
+    if (!provider) return "integration-state ready";
     if (provider?.connected) return "integration-state connected";
     if (provider?.configured) return "integration-state ready";
     return "integration-state missing";
+  }
+
+  function googleConnectionLabel() {
+    const google = integrationStatus?.providers.google;
+    if (!google) return "Checking local mode";
+    if (google.connected) return google.localFile ? "Codex file synced" : "OAuth connected";
+    if (google.configured) return "OAuth ready";
+    return google.localFile ? "Codex sync needed" : "Codex sync mode";
+  }
+
+  function salesforceConnectionLabel() {
+    const salesforce = integrationStatus?.providers.salesforce;
+    if (!salesforce) return "Checking local mode";
+    if (salesforce.connected) return salesforce.configured ? "OAuth connected" : "CLI connected";
+    if (salesforce.configured) return "OAuth ready";
+    return salesforce.fallbackConfigured ? "CLI fallback ready" : "CLI setup needed";
   }
 
   function startSalesforceColumnResize(key: SalesforceColumnKey, clientX: number) {
@@ -1682,15 +1699,7 @@ export default function Home() {
             <div>
               <span>Google Calendar</span>
               <strong className={integrationClass(integrationStatus?.providers.google)}>
-                {integrationStatus?.providers.google.connected
-                  ? integrationStatus?.providers.google.localFile
-                    ? "Local file synced"
-                    : "Connected"
-                  : integrationStatus?.providers.google.configured
-                    ? "Ready to connect"
-                    : integrationStatus?.providers.google.localFile
-                      ? "Needs Codex sync"
-                    : "Needs OAuth setup"}
+                {googleConnectionLabel()}
               </strong>
             </div>
             <div className="integration-actions">
@@ -1715,13 +1724,7 @@ export default function Home() {
             <div>
               <span>Salesforce</span>
               <strong className={integrationClass(integrationStatus?.providers.salesforce)}>
-                {integrationStatus?.providers.salesforce.connected
-                  ? "Connected"
-                  : integrationStatus?.providers.salesforce.configured
-                    ? "Ready to connect"
-                    : integrationStatus?.providers.salesforce.fallbackConfigured
-                      ? "Using shared fallback"
-                      : "Needs OAuth setup"}
+                {salesforceConnectionLabel()}
               </strong>
             </div>
             <div className="integration-actions">
