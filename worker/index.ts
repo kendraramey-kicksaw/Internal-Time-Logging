@@ -8,6 +8,9 @@ interface Env {
   SALESFORCE_ACCESS_TOKEN?: string;
   SALESFORCE_API_VERSION?: string;
   SALESFORCE_INSTANCE_URL?: string;
+  GOOGLE_CALENDAR_ACCESS_TOKEN?: string;
+  GOOGLE_CALENDAR_ID?: string;
+  GOOGLE_CALENDAR_TIMEZONE?: string;
   IMAGES: {
     input(stream: ReadableStream): {
       transform(options: Record<string, unknown>): {
@@ -25,6 +28,22 @@ interface ExecutionContext {
 const TASKRAY_TIME_OBJECT = "TASKRAY__trTaskTime__c";
 const TASKRAY_TIME_OWNER_ID = "0054T000001in8HQAQ";
 const DEFAULT_SALESFORCE_API_VERSION = "v67.0";
+const DEFAULT_GOOGLE_CALENDAR_ID = "primary";
+const DEFAULT_GOOGLE_CALENDAR_TIMEZONE = "America/Toronto";
+const CRISIS_PROJECT = {
+  id: "a0uQh000004SaXhIAK",
+  label: "Crisis24 - OnSolve Migration - (SOPS)",
+  idPricingStructure: "a0uQh000004SaXhIAK-Capacity",
+  pricingStructure: "Capacity",
+  taskId: "a0tQh00000pN8R9IAK",
+};
+const INTERNAL_PROJECT = {
+  id: "a0uQh000007aLujIAE",
+  label: "Kicksaw - Internal Time Tracking",
+  idPricingStructure: "a0uQh000007aLujIAE-Internal",
+  pricingStructure: "Internal",
+  taskId: "a0tQh00000pNVP9IAO",
+};
 
 type SalesforceTimeRecord = {
   Id: string;
@@ -54,6 +73,34 @@ type SalesforceCompositeResult = Array<{
   }>;
 }>;
 
+type GoogleCalendarEvent = {
+  id: string;
+  summary?: string;
+  description?: string;
+  status?: string;
+  transparency?: string;
+  eventType?: string;
+  start?: {
+    date?: string;
+    dateTime?: string;
+  };
+  end?: {
+    date?: string;
+    dateTime?: string;
+  };
+  attendees?: Array<{
+    email?: string;
+    resource?: boolean;
+    responseStatus?: string;
+    self?: boolean;
+  }>;
+};
+
+type GoogleCalendarEventsResponse = {
+  items?: GoogleCalendarEvent[];
+  nextPageToken?: string;
+};
+
 // Image security config. SVG sources with .svg extension auto-skip the
 // optimization endpoint on the client side (served directly, no proxy).
 // To route SVGs through the optimizer (with security headers), set
@@ -63,6 +110,11 @@ type SalesforceCompositeResult = Array<{
 const worker = {
   async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
     const url = new URL(request.url);
+
+    if (url.pathname === "/api/calendar/events") {
+      if (request.method === "GET") return getGoogleCalendarEvents(request, env);
+      return jsonResponse({ error: "Method not allowed" }, 405);
+    }
 
     if (url.pathname === "/api/salesforce/time-entries") {
       if (request.method === "GET") return getSalesforceTimeEntries(request, env);
@@ -172,6 +224,60 @@ async function createSalesforceTimeEntries(request: Request, env?: Env): Promise
   return jsonResponse(response.data, 201);
 }
 
+async function getGoogleCalendarEvents(request: Request, env?: Env): Promise<Response> {
+  const accessToken = env?.GOOGLE_CALENDAR_ACCESS_TOKEN ?? process.env.GOOGLE_CALENDAR_ACCESS_TOKEN;
+  if (!accessToken) {
+    return jsonResponse({ error: "Google Calendar connection is not configured." }, 503);
+  }
+
+  const url = new URL(request.url);
+  const start = safeDate(url.searchParams.get("start"));
+  const end = safeDate(url.searchParams.get("end"));
+  if (!start || !end) return jsonResponse({ error: "Start and end dates are required." }, 400);
+
+  const timezone = env?.GOOGLE_CALENDAR_TIMEZONE ?? process.env.GOOGLE_CALENDAR_TIMEZONE ?? DEFAULT_GOOGLE_CALENDAR_TIMEZONE;
+  const calendarId = env?.GOOGLE_CALENDAR_ID ?? process.env.GOOGLE_CALENDAR_ID ?? DEFAULT_GOOGLE_CALENDAR_ID;
+  const timeMin = zonedDateBoundaryToUtcIso(start, timezone);
+  const timeMax = zonedDateBoundaryToUtcIso(addDaysIso(end, 1), timezone);
+  const events: GoogleCalendarEvent[] = [];
+  let nextPageToken: string | undefined;
+
+  do {
+    const googleUrl = new URL(`https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(calendarId)}/events`);
+    googleUrl.searchParams.set("singleEvents", "true");
+    googleUrl.searchParams.set("orderBy", "startTime");
+    googleUrl.searchParams.set("timeMin", timeMin);
+    googleUrl.searchParams.set("timeMax", timeMax);
+    googleUrl.searchParams.set("timeZone", timezone);
+    googleUrl.searchParams.set("maxResults", "2500");
+    if (nextPageToken) googleUrl.searchParams.set("pageToken", nextPageToken);
+
+    const response = await fetch(googleUrl, {
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+      },
+    });
+    const data = (await response.json().catch(() => ({}))) as GoogleCalendarEventsResponse & { error?: unknown };
+
+    if (!response.ok) {
+      return jsonResponse(
+        {
+          error: "Google Calendar request failed.",
+          details: data,
+        },
+        response.status,
+      );
+    }
+
+    events.push(...(data.items ?? []));
+    nextPageToken = data.nextPageToken;
+  } while (nextPageToken);
+
+  return jsonResponse({
+    records: events.flatMap((event) => normalizeGoogleCalendarEvent(event)),
+  });
+}
+
 function salesforceConnection(env?: Env) {
   const instanceUrl = (env?.SALESFORCE_INSTANCE_URL ?? process.env.SALESFORCE_INSTANCE_URL)?.replace(/\/$/, "");
   const accessToken = env?.SALESFORCE_ACCESS_TOKEN ?? process.env.SALESFORCE_ACCESS_TOKEN;
@@ -222,6 +328,136 @@ async function salesforceFetch<T>(
 
 function safeDate(value: string | null) {
   return value && /^\d{4}-\d{2}-\d{2}$/.test(value) ? value : null;
+}
+
+function normalizeGoogleCalendarEvent(event: GoogleCalendarEvent) {
+  if (shouldIgnoreGoogleCalendarEvent(event)) return [];
+
+  const title = event.summary?.trim() || "Untitled calendar event";
+  const start = event.start?.dateTime ?? (event.start?.date ? `${event.start.date}T00:00:00` : "");
+  const end = event.end?.dateTime ?? (event.end?.date ? `${event.end.date}T00:00:00` : "");
+  if (!start || !end) return [];
+
+  const classification = classifyGoogleCalendarEvent(event);
+
+  return [
+    {
+      id: event.id,
+      title,
+      start,
+      end,
+      project: classification.project,
+      activityType: classification.activityType,
+      billable: classification.project.id !== INTERNAL_PROJECT.id,
+      responseStatus: selfResponseStatus(event),
+      transparency: event.transparency === "transparent" ? "transparent" : "opaque",
+    },
+  ];
+}
+
+function shouldIgnoreGoogleCalendarEvent(event: GoogleCalendarEvent) {
+  const title = (event.summary ?? "").toLowerCase();
+  const eventType = (event.eventType ?? "").toLowerCase();
+  const calendarDescription = (event.description ?? "").toLowerCase();
+
+  return (
+    event.status === "cancelled" ||
+    selfResponseStatus(event) === "declined" ||
+    event.transparency === "transparent" ||
+    eventType === "focustime" ||
+    eventType === "outofoffice" ||
+    eventType === "workinglocation" ||
+    title.includes("focus time") ||
+    title.includes("ooo") ||
+    title.includes("out of office") ||
+    title.includes("birthday") ||
+    calendarDescription.includes("birthday calendar")
+  );
+}
+
+function classifyGoogleCalendarEvent(event: GoogleCalendarEvent): {
+  activityType: "Meeting" | "Coding and Configuration" | "People and Team Activities";
+  project: typeof CRISIS_PROJECT | typeof INTERNAL_PROJECT;
+} {
+  const title = (event.summary ?? "").toLowerCase();
+  const attendeeCount = workAttendeeCount(event);
+  const peopleAndTeam =
+    title.includes("all hands") ||
+    title.includes("team lunch") ||
+    title.includes("values in action") ||
+    title.includes("salesforce user group") ||
+    title.includes("delivery ai lounge") ||
+    title.includes("hangout") ||
+    title.includes("workshop") ||
+    title.includes("kendra / dj") ||
+    title.includes("kendra/dj") ||
+    title.includes("dj / kendra") ||
+    title.includes("dj/kendra");
+
+  if (peopleAndTeam) {
+    return { activityType: "People and Team Activities", project: INTERNAL_PROJECT };
+  }
+
+  const looksLikeMeeting =
+    attendeeCount > 1 ||
+    title.includes("meeting") ||
+    title.includes("stand-up") ||
+    title.includes("standup") ||
+    title.includes("triage") ||
+    title.includes("sync") ||
+    title.includes("review") ||
+    title.includes("check-in") ||
+    title.includes("chat") ||
+    title.includes("call") ||
+    title.includes("huddle") ||
+    title.includes("1:1");
+
+  return {
+    activityType: looksLikeMeeting ? "Meeting" : "Coding and Configuration",
+    project: CRISIS_PROJECT,
+  };
+}
+
+function selfResponseStatus(event: GoogleCalendarEvent): "accepted" | "declined" | null {
+  const selfAttendee = event.attendees?.find((attendee) => attendee.self);
+  if (selfAttendee?.responseStatus === "declined") return "declined";
+  if (selfAttendee?.responseStatus === "accepted") return "accepted";
+  return null;
+}
+
+function workAttendeeCount(event: GoogleCalendarEvent) {
+  return event.attendees?.filter((attendee) => !attendee.resource).length ?? 1;
+}
+
+function addDaysIso(date: string, days: number) {
+  const nextDate = new Date(`${date}T00:00:00Z`);
+  nextDate.setUTCDate(nextDate.getUTCDate() + days);
+  return nextDate.toISOString().slice(0, 10);
+}
+
+function zonedDateBoundaryToUtcIso(date: string, timeZone: string) {
+  const utcGuess = new Date(`${date}T00:00:00.000Z`);
+  const zonedParts = new Intl.DateTimeFormat("en-US", {
+    day: "2-digit",
+    hour: "2-digit",
+    hour12: false,
+    minute: "2-digit",
+    month: "2-digit",
+    second: "2-digit",
+    timeZone,
+    year: "numeric",
+  }).formatToParts(utcGuess);
+  const valueFor = (type: string) => Number(zonedParts.find((part) => part.type === type)?.value);
+  const zonedAsUtc = Date.UTC(
+    valueFor("year"),
+    valueFor("month") - 1,
+    valueFor("day"),
+    valueFor("hour"),
+    valueFor("minute"),
+    valueFor("second"),
+  );
+
+  return new Date(utcGuess.getTime() - (zonedAsUtc - utcGuess.getTime())).toISOString();
 }
 
 function jsonResponse(body: unknown, status = 200) {

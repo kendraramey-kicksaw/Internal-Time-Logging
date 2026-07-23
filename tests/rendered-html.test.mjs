@@ -36,6 +36,7 @@ test("server-renders the calendar time-entry workspace", async () => {
   assert.match(html, /Copy Salesforce Payload/);
   assert.match(html, /Import to Salesforce/);
   assert.match(html, /Refresh Calendar/);
+  assert.match(html, /Calendar snapshot loaded/);
   assert.match(html, /Suggested entry rules/);
   assert.match(html, /Actions/);
   assert.match(html, /Remove/);
@@ -53,9 +54,10 @@ test("server-renders the calendar time-entry workspace", async () => {
 });
 
 test("keeps the starter preview out of the production screen", async () => {
-  const [page, layout] = await Promise.all([
+  const [page, layout, worker] = await Promise.all([
     readFile(new URL("../app/page.tsx", import.meta.url), "utf8"),
     readFile(new URL("../app/layout.tsx", import.meta.url), "utf8"),
+    readFile(new URL("../worker/index.ts", import.meta.url), "utf8"),
   ]);
 
   assert.doesNotMatch(page, /SkeletonPreview|codex-preview|react-loading-skeleton/);
@@ -63,4 +65,6 @@ test("keeps the starter preview out of the production screen", async () => {
   assert.match(page, /Activity_Type__c/);
   assert.match(page, /TASKRAY__Project__c/);
   assert.match(page, /TASKRAY__Task__c/);
+  assert.match(page, /\/api\/calendar\/events/);
+  assert.match(worker, /GOOGLE_CALENDAR_ACCESS_TOKEN/);
 });

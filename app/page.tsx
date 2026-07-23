@@ -37,6 +37,10 @@ type SalesforceTimeEntryResponse = {
   records: SalesforceTimeEntry[];
 };
 
+type CalendarEventResponse = {
+  records: CalendarEvent[];
+};
+
 type CalendarEvent = {
   id: string;
   title: string;
@@ -730,10 +734,10 @@ function shouldIgnoreCalendarEvent(event: CalendarEvent) {
   );
 }
 
-function buildCalendarSuggestions(startDate: string, endDate: string) {
+function buildCalendarSuggestions(startDate: string, endDate: string, events = calendarEventSeed) {
   const grouped = new Map<string, { entry: TimeEntry; titles: Set<string> }>();
 
-  for (const event of calendarEventSeed) {
+  for (const event of events) {
     const date = dateFromEvent(event);
     if (date < startDate || date > endDate || shouldIgnoreCalendarEvent(event)) continue;
 
@@ -1069,8 +1073,10 @@ export default function Home() {
   const [liveSalesforceRows, setLiveSalesforceRows] = useState(salesforceRows);
   const [manualDraft, setManualDraft] = useState(blankEntry());
   const [salesforceSyncStatus, setSalesforceSyncStatus] = useState("Salesforce snapshot loaded");
+  const [calendarSyncStatus, setCalendarSyncStatus] = useState("Calendar snapshot loaded");
   const [importStatus, setImportStatus] = useState("");
   const [isImporting, setIsImporting] = useState(false);
+  const [isRefreshingCalendar, setIsRefreshingCalendar] = useState(false);
   const [suggestionStartWasEdited, setSuggestionStartWasEdited] = useState(false);
   const [suggestionSort, setSuggestionSort] = useState<SortConfig<SuggestedSortKey>>({
     key: "date",
@@ -1154,9 +1160,29 @@ export default function Home() {
     setManualDraft(blankEntry());
   }
 
-  function refreshCalendarSuggestions() {
+  async function refreshCalendarSuggestions() {
     const manualEntries = suggestions.filter((entry) => entry.source === "Manual");
-    setSuggestions([...manualEntries, ...buildCalendarSuggestions(suggestionStart, suggestionEnd)]);
+    setIsRefreshingCalendar(true);
+    setCalendarSyncStatus("Refreshing Calendar...");
+
+    try {
+      const response = await fetch(
+        `/api/calendar/events?start=${suggestionStart}&end=${suggestionEnd}`,
+      );
+      const body = await response.json();
+
+      if (!response.ok) throw new Error(body.error ?? "Calendar refresh failed.");
+
+      setSuggestions([
+        ...manualEntries,
+        ...buildCalendarSuggestions(suggestionStart, suggestionEnd, (body as CalendarEventResponse).records),
+      ]);
+      setCalendarSyncStatus("Calendar live");
+    } catch (error) {
+      setCalendarSyncStatus(error instanceof Error ? error.message : "Calendar refresh failed.");
+    } finally {
+      setIsRefreshingCalendar(false);
+    }
   }
 
   async function loadSalesforceRows(signal?: AbortSignal) {
@@ -1181,6 +1207,14 @@ export default function Home() {
   function salesforceStatusClass() {
     if (salesforceSyncStatus === "Salesforce live") return "sync-status live";
     if (salesforceSyncStatus === "Refreshing Salesforce..." || salesforceSyncStatus === "Salesforce snapshot loaded") {
+      return "sync-status";
+    }
+    return "sync-status failed";
+  }
+
+  function calendarStatusClass() {
+    if (calendarSyncStatus === "Calendar live") return "sync-status live";
+    if (calendarSyncStatus === "Refreshing Calendar..." || calendarSyncStatus === "Calendar snapshot loaded") {
       return "sync-status";
     }
     return "sync-status failed";
@@ -1331,8 +1365,9 @@ export default function Home() {
               />
             </label>
           </div>
-          <button type="button" onClick={refreshCalendarSuggestions}>
-            Refresh Calendar
+          <p className={calendarStatusClass()}>{calendarSyncStatus}</p>
+          <button type="button" onClick={refreshCalendarSuggestions} disabled={isRefreshingCalendar}>
+            {isRefreshingCalendar ? "Refreshing..." : "Refresh Calendar"}
           </button>
         </div>
         <div className="table-wrap">
