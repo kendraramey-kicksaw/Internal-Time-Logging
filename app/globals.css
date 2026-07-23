@@ -256,6 +256,10 @@ td {
   vertical-align: top;
 }
 
+.suggested-table td {
+  vertical-align: middle;
+}
+
 tbody tr:nth-child(even) td {
   background: #fafbf8;
 }
@@ -403,7 +407,7 @@ input:disabled {
   grid-template-columns: 140px minmax(260px, 1.25fr) 100px 92px 210px minmax(220px, 1fr);
   gap: 12px;
   margin-top: 14px;
-  align-items: end;
+  align-items: center;
 }
 
 .notes-field {

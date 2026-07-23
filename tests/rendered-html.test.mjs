@@ -58,4 +58,5 @@ test("keeps the starter preview out of the production screen", async () => {
   assert.doesNotMatch(layout, /Starter Project/);
   assert.match(page, /Activity_Type__c/);
   assert.match(page, /TASKRAY__Project__c/);
+  assert.match(page, /TASKRAY__Task__c/);
 });
