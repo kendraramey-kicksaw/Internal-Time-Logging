@@ -48,18 +48,28 @@ type SortDirection = "asc" | "desc";
 type SuggestedSortKey = "date" | "projectLabel" | "hours" | "billable" | "activityType" | "notes";
 type SalesforceSortKey =
   | "date"
+  | "recordName"
   | "projectLabel"
   | "hours"
   | "billable"
   | "activityType"
   | "timeType"
-  | "notes"
-  | "recordName";
+  | "notes";
 
 type SortConfig<Key extends string> = {
   key: Key;
   direction: SortDirection;
 };
+
+type SalesforceColumnKey =
+  | "date"
+  | "recordName"
+  | "projectLabel"
+  | "hours"
+  | "billable"
+  | "activityType"
+  | "timeType"
+  | "notes";
 
 const monthStart = "2026-07-01";
 const monthEnd = "2026-07-31";
@@ -67,6 +77,16 @@ const defaultSuggestionStart = "2026-07-11";
 const defaultSuggestionEnd = "2026-07-21";
 const ownerId = "0054T000001in8HQAQ";
 const salesforceBaseUrl = "https://kicksaw.my.salesforce.com";
+const initialSalesforceColumnWidths: Record<SalesforceColumnKey, number> = {
+  date: 126,
+  recordName: 128,
+  projectLabel: 260,
+  hours: 84,
+  billable: 86,
+  activityType: 168,
+  timeType: 128,
+  notes: 580,
+};
 
 const RECORD_TYPE_IDS: Record<RecordTypeDeveloperName, string> = {
   Client_Work: "012Qh000002bDl7IAE",
@@ -232,13 +252,15 @@ function suggested(
   activityType: string,
   notes: string,
 ): TimeEntry {
+  const effectiveBillable = billableForProject(selectedProject, billable);
+
   return {
     id: `${date}-${selectedProject.id}-${activityType}-${notes}`.replace(/[^a-z0-9]+/gi, "-").toLowerCase(),
     date,
     projectValue: selectedProject.idPricingStructure,
     projectLabel: selectedProject.label,
     hours,
-    billable,
+    billable: effectiveBillable,
     activityType,
     notes,
     source: "Calendar",
@@ -275,7 +297,7 @@ function buildCalendarSuggestions(startDate: string, endDate: string) {
       date,
       event.project.idPricingStructure,
       event.activityType,
-      event.billable ? "billable" : "nonbillable",
+      billableForProject(event.project, event.billable) ? "billable" : "nonbillable",
     ].join("|");
     const existing = grouped.get(groupKey);
 
@@ -358,6 +380,14 @@ function recordTypeForEntry(entry: Pick<TimeEntry, "projectLabel">): RecordTypeD
   return "Client_Work";
 }
 
+function locksBillable(projectLabel: string) {
+  return projectLabel.includes("Kicksaw");
+}
+
+function billableForProject(project: Pick<Project, "label">, requestedBillable: boolean) {
+  return locksBillable(project.label) ? false : requestedBillable;
+}
+
 function timeTypeForEntry(entry: Pick<TimeEntry, "projectValue" | "projectLabel">) {
   const pricingStructure = pricingStructureForEntry(entry);
   if (pricingStructure === "Capacity") return "Engagement Fee";
@@ -372,7 +402,8 @@ function categoryForEntry(entry: Pick<TimeEntry, "projectLabel">) {
 
 function compactPayloadRecord(entry: TimeEntry) {
   const recordTypeDeveloperName = recordTypeForEntry(entry);
-  const nonBillableReason = entry.billable ? undefined : "Not Applicable";
+  const billable = locksBillable(entry.projectLabel) ? false : entry.billable;
+  const nonBillableReason = billable || locksBillable(entry.projectLabel) ? undefined : "Not Applicable";
   const notes = entry.notes.trim();
 
   return {
@@ -382,7 +413,7 @@ function compactPayloadRecord(entry: TimeEntry) {
     TASKRAY__Date__c: entry.date,
     TASKRAY__Project__c: projectIdFromValue(entry.projectValue),
     TASKRAY__Hours__c: Number(entry.hours.toFixed(2)),
-    TASKRAY__Billable__c: entry.billable,
+    TASKRAY__Billable__c: billable,
     TASKRAY__trTimeType__c: timeTypeForEntry(entry),
     Category__c: categoryForEntry(entry) || undefined,
     Non_Billable_Reason__c: nonBillableReason,
@@ -460,6 +491,44 @@ function SortHeader<Key extends string>({
   );
 }
 
+function ResizableSortHeader<Key extends SalesforceSortKey>({
+  label,
+  sortKey,
+  sortConfig,
+  onSort,
+  onResizeStart,
+}: {
+  label: string;
+  sortKey: Key;
+  sortConfig: SortConfig<SalesforceSortKey>;
+  onSort: (key: Key) => void;
+  onResizeStart: (key: SalesforceColumnKey, clientX: number) => void;
+}) {
+  const active = sortConfig.key === sortKey;
+  const indicator = active ? (sortConfig.direction === "asc" ? "Asc" : "Desc") : "";
+
+  return (
+    <th>
+      <button
+        type="button"
+        className={active ? "sort-button active" : "sort-button"}
+        onClick={() => onSort(sortKey)}
+      >
+        <span>{label}</span>
+        <span aria-hidden="true">{indicator}</span>
+      </button>
+      <span
+        aria-hidden="true"
+        className="column-resizer"
+        onMouseDown={(event) => {
+          event.preventDefault();
+          onResizeStart(sortKey as SalesforceColumnKey, event.clientX);
+        }}
+      />
+    </th>
+  );
+}
+
 function ProjectLookup({
   label,
   value,
@@ -510,6 +579,7 @@ export default function Home() {
     key: "date",
     direction: "desc",
   });
+  const [salesforceColumnWidths, setSalesforceColumnWidths] = useState(initialSalesforceColumnWidths);
 
   const filteredSuggestions = useMemo(
     () =>
@@ -532,20 +602,22 @@ export default function Home() {
   const totals = useMemo(() => {
     const suggestedHours = filteredSuggestions.reduce((sum, entry) => sum + entry.hours, 0);
     const salesforceHours = filteredSalesforceRows.reduce((sum, entry) => sum + entry.hours, 0);
-    const flaggedSuggestions = filteredSuggestions.filter(
-      (entry) => entry.hours > 12 || !entry.projectValue || entry.notes.trim().length === 0,
-    ).length;
+    const rowsToReview = filteredSuggestions.length;
     const lastSalesforceDate = salesforceRows.reduce(
       (latest, entry) => (entry.date > latest ? entry.date : latest),
       "",
     );
 
-    return { suggestedHours, salesforceHours, flaggedSuggestions, lastSalesforceDate };
+    return { suggestedHours, salesforceHours, rowsToReview, lastSalesforceDate };
   }, [filteredSalesforceRows, filteredSuggestions]);
 
   function updateSuggestion(id: string, updates: Partial<TimeEntry>) {
     setSuggestions((current) =>
-      current.map((entry) => (entry.id === id ? { ...entry, ...updates } : entry)),
+      current.map((entry) => {
+        if (entry.id !== id) return entry;
+        const updated = { ...entry, ...updates };
+        return locksBillable(updated.projectLabel) ? { ...updated, billable: false } : updated;
+      }),
     );
   }
 
@@ -560,6 +632,7 @@ export default function Home() {
         {
           ...manualDraft,
           id: `manual-${crypto.randomUUID()}`,
+          billable: locksBillable(manualDraft.projectLabel) ? false : manualDraft.billable,
           source: "Manual",
         },
       ].sort(sortSuggested),
@@ -570,6 +643,23 @@ export default function Home() {
   function refreshCalendarSuggestions() {
     const manualEntries = suggestions.filter((entry) => entry.source === "Manual");
     setSuggestions([...manualEntries, ...buildCalendarSuggestions(suggestionStart, suggestionEnd)]);
+  }
+
+  function startSalesforceColumnResize(key: SalesforceColumnKey, clientX: number) {
+    const startingWidth = salesforceColumnWidths[key];
+
+    function resize(event: MouseEvent) {
+      const nextWidth = Math.max(72, startingWidth + event.clientX - clientX);
+      setSalesforceColumnWidths((current) => ({ ...current, [key]: nextWidth }));
+    }
+
+    function stopResize() {
+      window.removeEventListener("mousemove", resize);
+      window.removeEventListener("mouseup", stopResize);
+    }
+
+    window.addEventListener("mousemove", resize);
+    window.addEventListener("mouseup", stopResize);
   }
 
   function copyPayload() {
@@ -610,9 +700,9 @@ export default function Home() {
           <span>Salesforce Hours</span>
           <strong>{formatHours(totals.salesforceHours)}</strong>
         </div>
-        <div className={totals.flaggedSuggestions ? "needs-review" : ""}>
+        <div className={totals.rowsToReview ? "needs-review" : ""}>
           <span>Rows To Review</span>
-          <strong>{totals.flaggedSuggestions}</strong>
+          <strong>{totals.rowsToReview}</strong>
         </div>
       </section>
 
@@ -675,6 +765,7 @@ export default function Home() {
                           updateSuggestion(entry.id, {
                             projectValue: selected.idPricingStructure,
                             projectLabel: selected.label,
+                            billable: billableForProject(selected, entry.billable),
                           })
                         }
                       />
@@ -696,6 +787,7 @@ export default function Home() {
                         aria-label={`Billable ${entry.projectLabel}`}
                         type="checkbox"
                         checked={entry.billable}
+                        disabled={locksBillable(entry.projectLabel)}
                         onChange={(event) =>
                           updateSuggestion(entry.id, { billable: event.target.checked })
                         }
@@ -764,6 +856,7 @@ export default function Home() {
                 ...manualDraft,
                 projectValue: selectedProject.idPricingStructure,
                 projectLabel: selectedProject.label,
+                billable: billableForProject(selectedProject, manualDraft.billable),
               })
             }
           />
@@ -784,6 +877,7 @@ export default function Home() {
             <input
               type="checkbox"
               checked={manualDraft.billable}
+              disabled={locksBillable(manualDraft.projectLabel)}
               onChange={(event) =>
                 setManualDraft({ ...manualDraft, billable: event.target.checked })
               }
@@ -840,23 +934,38 @@ export default function Home() {
           </div>
         </div>
         <div className="table-wrap">
-          <table>
+          <table className="salesforce-table">
+            <colgroup>
+              <col style={{ width: salesforceColumnWidths.date }} />
+              <col style={{ width: salesforceColumnWidths.recordName }} />
+              <col style={{ width: salesforceColumnWidths.projectLabel }} />
+              <col style={{ width: salesforceColumnWidths.hours }} />
+              <col style={{ width: salesforceColumnWidths.billable }} />
+              <col style={{ width: salesforceColumnWidths.activityType }} />
+              <col style={{ width: salesforceColumnWidths.timeType }} />
+              <col style={{ width: salesforceColumnWidths.notes }} />
+            </colgroup>
             <thead>
               <tr>
-                <SortHeader label="Date" sortKey="date" sortConfig={salesforceSort} onSort={(key) => setSalesforceSort((current) => nextSort(current, key))} />
-                <SortHeader label="Project" sortKey="projectLabel" sortConfig={salesforceSort} onSort={(key) => setSalesforceSort((current) => nextSort(current, key))} />
-                <SortHeader label="Hours" sortKey="hours" sortConfig={salesforceSort} onSort={(key) => setSalesforceSort((current) => nextSort(current, key))} />
-                <SortHeader label="Billable" sortKey="billable" sortConfig={salesforceSort} onSort={(key) => setSalesforceSort((current) => nextSort(current, key))} />
-                <SortHeader label="Activity Type" sortKey="activityType" sortConfig={salesforceSort} onSort={(key) => setSalesforceSort((current) => nextSort(current, key))} />
-                <SortHeader label="Time Type" sortKey="timeType" sortConfig={salesforceSort} onSort={(key) => setSalesforceSort((current) => nextSort(current, key))} />
-                <SortHeader label="Notes" sortKey="notes" sortConfig={salesforceSort} onSort={(key) => setSalesforceSort((current) => nextSort(current, key))} />
-                <SortHeader label="Record" sortKey="recordName" sortConfig={salesforceSort} onSort={(key) => setSalesforceSort((current) => nextSort(current, key))} />
+                <ResizableSortHeader label="Date" sortKey="date" sortConfig={salesforceSort} onResizeStart={startSalesforceColumnResize} onSort={(key) => setSalesforceSort((current) => nextSort(current, key))} />
+                <ResizableSortHeader label="Record" sortKey="recordName" sortConfig={salesforceSort} onResizeStart={startSalesforceColumnResize} onSort={(key) => setSalesforceSort((current) => nextSort(current, key))} />
+                <ResizableSortHeader label="Project" sortKey="projectLabel" sortConfig={salesforceSort} onResizeStart={startSalesforceColumnResize} onSort={(key) => setSalesforceSort((current) => nextSort(current, key))} />
+                <ResizableSortHeader label="Hours" sortKey="hours" sortConfig={salesforceSort} onResizeStart={startSalesforceColumnResize} onSort={(key) => setSalesforceSort((current) => nextSort(current, key))} />
+                <ResizableSortHeader label="Billable" sortKey="billable" sortConfig={salesforceSort} onResizeStart={startSalesforceColumnResize} onSort={(key) => setSalesforceSort((current) => nextSort(current, key))} />
+                <ResizableSortHeader label="Activity Type" sortKey="activityType" sortConfig={salesforceSort} onResizeStart={startSalesforceColumnResize} onSort={(key) => setSalesforceSort((current) => nextSort(current, key))} />
+                <ResizableSortHeader label="Time Type" sortKey="timeType" sortConfig={salesforceSort} onResizeStart={startSalesforceColumnResize} onSort={(key) => setSalesforceSort((current) => nextSort(current, key))} />
+                <ResizableSortHeader label="Notes" sortKey="notes" sortConfig={salesforceSort} onResizeStart={startSalesforceColumnResize} onSort={(key) => setSalesforceSort((current) => nextSort(current, key))} />
               </tr>
             </thead>
             <tbody>
               {filteredSalesforceRows.map((entry) => (
                 <tr key={entry.recordId}>
                   <td>{entry.date}</td>
+                  <td className="record-id">
+                    <a href={recordUrl(entry.recordId)} target="_blank" rel="noreferrer">
+                      {entry.recordName}
+                    </a>
+                  </td>
                   <td>{entry.projectLabel}</td>
                   <td className="numeric">{formatHours(entry.hours)}</td>
                   <td className="checkbox-cell">
@@ -870,11 +979,6 @@ export default function Home() {
                   <td>{entry.activityType}</td>
                   <td>{entry.timeType || "-"}</td>
                   <td>{entry.notes || "-"}</td>
-                  <td className="record-id">
-                    <a href={recordUrl(entry.recordId)} target="_blank" rel="noreferrer">
-                      {entry.recordName}
-                    </a>
-                  </td>
                 </tr>
               ))}
             </tbody>

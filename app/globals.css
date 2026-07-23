@@ -255,6 +255,24 @@ th {
   text-transform: uppercase;
 }
 
+.salesforce-table {
+  min-width: 1540px;
+  table-layout: fixed;
+}
+
+.salesforce-table th,
+.salesforce-table td {
+  min-width: 0;
+  width: auto;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  word-break: normal;
+}
+
+.salesforce-table th {
+  position: sticky;
+}
+
 .sort-button {
   display: inline-flex;
   align-items: center;
@@ -274,6 +292,20 @@ th {
 .sort-button:hover,
 .sort-button.active {
   color: var(--accent-strong);
+}
+
+.column-resizer {
+  position: absolute;
+  top: 0;
+  right: -3px;
+  bottom: 0;
+  width: 8px;
+  cursor: col-resize;
+  touch-action: none;
+}
+
+.column-resizer:hover {
+  background: color-mix(in srgb, var(--accent) 25%, transparent);
 }
 
 td:nth-child(1) {
@@ -316,6 +348,20 @@ tr.review-row td {
 .checkbox-cell,
 .manual-checkbox {
   align-items: center;
+}
+
+.checkbox-cell {
+  text-align: center;
+}
+
+.checkbox-cell input {
+  display: block;
+  margin: 0 auto;
+}
+
+input:disabled {
+  cursor: not-allowed;
+  opacity: 0.72;
 }
 
 .record-id {
