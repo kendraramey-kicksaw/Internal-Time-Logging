@@ -601,20 +601,27 @@ const projectOptions: Project[] = [
   project("a0uQh000008YhAnIAK", "WWCT - Org Health Reboot - SOPs", "Capacity"),
 ].sort((a, b) => a.label.localeCompare(b.label));
 
-const activityTypes = [
-  "Admin and Overhead",
-  "Build",
+const clientActivityTypes = [
+  "Meeting",
+  "Documentation",
   "Coding and Configuration",
   "Communications",
-  "Design",
-  "Documentation",
+  "Travel",
+];
+
+const internalTimeActivityTypes = [
+  "Admin and Overhead",
   "Learning and Development",
-  "Meeting",
   "People and Team Activities",
   "Presales",
   "Recruiting",
-  "Release",
   "Travel",
+];
+
+const internalInitiativeActivityTypes = [
+  "Design",
+  "Build",
+  "Release",
 ];
 
 const salesforceRows: SalesforceTimeEntry[] = [
@@ -751,7 +758,7 @@ function suggested(
     projectLabel: selectedProject.label,
     hours,
     billable: effectiveBillable,
-    activityType,
+    activityType: activityTypeForProject(selectedProject.label, activityType),
     notes,
     source: "Calendar",
     taskId: selectedProject.taskId,
@@ -939,6 +946,17 @@ function billableForProject(project: Pick<Project, "label">, requestedBillable: 
   return locksBillable(project.label) ? false : requestedBillable;
 }
 
+function activityTypesForProjectLabel(projectLabel: string) {
+  if (projectLabel === INTERNAL_PROJECT.label) return internalTimeActivityTypes;
+  if (projectLabel.includes("Kicksaw - ")) return internalInitiativeActivityTypes;
+  return clientActivityTypes;
+}
+
+function activityTypeForProject(projectLabel: string, requestedActivityType: string) {
+  const options = activityTypesForProjectLabel(projectLabel);
+  return options.includes(requestedActivityType) ? requestedActivityType : options[0];
+}
+
 function timeTypeForEntry(entry: Pick<TimeEntry, "projectValue" | "projectLabel">) {
   const pricingStructure = pricingStructureForEntry(entry);
   if (pricingStructure === "Capacity") return "Engagement Fee";
@@ -1051,7 +1069,7 @@ function SortHeader<Key extends string>({
   onSort: (key: Key) => void;
 }) {
   const active = sortConfig.key === sortKey;
-  const indicator = active ? (sortConfig.direction === "asc" ? "Asc" : "Desc") : "";
+  const indicator = active ? (sortConfig.direction === "asc" ? "↑" : "↓") : "";
 
   return (
     <th>
@@ -1081,7 +1099,7 @@ function ResizableSortHeader<Key extends SalesforceSortKey>({
   onResizeStart: (key: SalesforceColumnKey, clientX: number) => void;
 }) {
   const active = sortConfig.key === sortKey;
-  const indicator = active ? (sortConfig.direction === "asc" ? "Asc" : "Desc") : "";
+  const indicator = active ? (sortConfig.direction === "asc" ? "↑" : "↓") : "";
 
   return (
     <th>
@@ -1387,7 +1405,8 @@ export default function Home() {
   async function copyCodexCalendarSyncPrompt() {
     const prompt = [
       "Using my connected Google Calendar integration, fetch my primary calendar events for the Internal Time Logging app.",
-      `Date range: ${suggestionStart} through ${suggestionEnd}.`,
+      `Date range: ${monthStart} through ${monthEnd}.`,
+      `The app will filter the month file to the current visible range: ${suggestionStart} through ${suggestionEnd}.`,
       `My selected Delivery Team is ${deliveryTeam}.`,
       `Write the result to ${calendarFile}.`,
       "Use JSON with a top-level \"records\" array.",
@@ -1400,8 +1419,8 @@ export default function Home() {
       "- Exclude transparent, birthday, and FYI events.",
       "- Mark internal culture/team events as People and Team Activities.",
       "- Mark meetings with DJ and me only as internal.",
-      "- For external meetings, include attendeeEmails and leave project blank if you cannot confidently identify it.",
-      "- For solo work blocks, include them as Coding and Configuration and leave project blank if you cannot confidently identify it.",
+      "- For external meetings, include attendeeEmails and leave project blank unless the attendees clearly identify the client.",
+      "- For solo work blocks with no attendees, use Coding and Configuration and leave project blank unless the title clearly names a client or project.",
       "After writing the file, tell me to click Refresh Suggestions in the app.",
       "Do not edit app source code for this calendar sync.",
     ].join("\n");
@@ -1542,6 +1561,17 @@ export default function Home() {
       return "sync-status";
     }
     return "sync-status failed";
+  }
+
+  function salesforceErrorMessage() {
+    if (
+      salesforceSyncStatus === "Salesforce live" ||
+      salesforceSyncStatus === "Refreshing Salesforce..." ||
+      salesforceSyncStatus === "Salesforce snapshot loaded"
+    ) {
+      return "";
+    }
+    return salesforceSyncStatus;
   }
 
   function calendarStatusClass() {
@@ -1913,6 +1943,7 @@ export default function Home() {
                             projectValue: selected.idPricingStructure,
                             projectLabel: selected.label,
                             billable: billableForProject(selected, entry.billable),
+                            activityType: activityTypeForProject(selected.label, entry.activityType),
                             taskId: selected.taskId,
                           })
                         }
@@ -1950,7 +1981,7 @@ export default function Home() {
                           updateSuggestion(entry.id, { activityType: event.target.value })
                         }
                       >
-                        {activityTypes.map((type) => (
+                        {activityTypesForProjectLabel(entry.projectLabel).map((type) => (
                           <option key={type} value={type}>
                             {type}
                           </option>
@@ -2024,6 +2055,7 @@ export default function Home() {
                         projectValue: selectedProject.idPricingStructure,
                         projectLabel: selectedProject.label,
                         billable: billableForProject(selectedProject, manualDraft.billable),
+                        activityType: activityTypeForProject(selectedProject.label, manualDraft.activityType),
                         taskId: selectedProject.taskId,
                       })
                     }
@@ -2062,7 +2094,7 @@ export default function Home() {
                       setManualDraft({ ...manualDraft, activityType: event.target.value })
                     }
                   >
-                    {activityTypes.map((type) => (
+                    {activityTypesForProjectLabel(manualDraft.projectLabel).map((type) => (
                       <option key={type} value={type}>
                         {type}
                       </option>
@@ -2095,7 +2127,6 @@ export default function Home() {
           <div>
             <h2>Salesforce TaskRay Time</h2>
           </div>
-          <p className={salesforceStatusClass()}>{salesforceSyncStatus}</p>
           <div className="date-filters">
             <label>
               Start
@@ -2114,7 +2145,8 @@ export default function Home() {
               />
             </label>
           </div>
-          <button type="button" onClick={() => loadSalesforceRows()}>
+          {salesforceErrorMessage() ? <p className={salesforceStatusClass()}>{salesforceErrorMessage()}</p> : null}
+          <button type="button" className="primary" onClick={() => loadSalesforceRows()}>
             Refresh Salesforce
           </button>
         </div>

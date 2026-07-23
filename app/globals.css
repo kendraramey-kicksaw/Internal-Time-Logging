@@ -99,6 +99,15 @@ textarea {
   padding: 8px 10px;
 }
 
+select {
+  padding-right: 30px;
+}
+
+input[type="date"] {
+  min-width: 132px;
+  padding-right: 4px;
+}
+
 input[type="checkbox"] {
   width: 18px;
   height: 18px;
@@ -202,6 +211,7 @@ h1 {
 
 h2 {
   font-size: 1.2rem;
+  font-weight: 800;
 }
 
 .subtle,
@@ -532,7 +542,7 @@ h2 {
 
 .date-filters {
   display: grid;
-  grid-template-columns: repeat(2, 150px);
+  grid-template-columns: repeat(2, 160px);
   gap: 10px;
 }
 
@@ -604,8 +614,10 @@ th {
   background: var(--panel-alt);
   color: var(--muted);
   font-size: 0.75rem;
+  font-weight: 800;
   line-height: 1.2;
   text-transform: uppercase;
+  vertical-align: middle;
 }
 
 .salesforce-table {
@@ -618,12 +630,12 @@ th {
 }
 
 .suggested-table {
-  min-width: 1360px;
+  min-width: 1422px;
 }
 
 .suggested-table th:nth-child(1),
 .suggested-table td:nth-child(1) {
-  width: 132px;
+  width: 152px;
 }
 
 .suggested-table th:nth-child(2),
@@ -643,7 +655,7 @@ th {
 
 .suggested-table th:nth-child(5),
 .suggested-table td:nth-child(5) {
-  width: 172px;
+  width: 214px;
 }
 
 .suggested-table th:nth-child(6),
@@ -654,6 +666,11 @@ th {
 .suggested-table th:nth-child(7),
 .suggested-table td:nth-child(7) {
   width: 104px;
+}
+
+.suggested-table th:last-child,
+.manual-table th:last-child {
+  vertical-align: middle;
 }
 
 .suggested-table td:nth-child(2) input,
@@ -705,6 +722,14 @@ th {
   line-height: 1.2;
 }
 
+.sort-button span:last-child {
+  display: inline-grid;
+  min-width: 12px;
+  place-items: center;
+  font-size: 0.86rem;
+  line-height: 1;
+}
+
 .sort-button:hover,
 .sort-button.active {
   color: var(--accent-strong);
@@ -725,7 +750,7 @@ th {
 }
 
 td:nth-child(1) {
-  width: 132px;
+  width: 152px;
 }
 
 td:nth-child(2) {
@@ -741,7 +766,7 @@ td:nth-child(4) {
 }
 
 td:nth-child(5) {
-  width: 200px;
+  width: 220px;
 }
 
 td:nth-child(6) {

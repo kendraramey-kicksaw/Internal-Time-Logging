@@ -339,7 +339,8 @@ async function projectForCalendarEvent(event, deliveryTeam, eventDate) {
     return (await matchProjectByDomains(domains, deliveryTeam, eventDate)) ?? BLANK_PROJECT;
   }
 
-  return normalizeProject(event.project) ?? BLANK_PROJECT;
+  const providedProject = normalizeProject(event.project);
+  return providedProject && projectIsNamedInEventTitle(providedProject, event) ? providedProject : BLANK_PROJECT;
 }
 
 async function matchProjectByDomains(domains, deliveryTeam, eventDate) {
@@ -414,6 +415,42 @@ function normalizeProject(project) {
     deliveryTeam: project.deliveryTeam,
     websiteDomain: websiteDomain(project.website ?? project.Website ?? project.TASKRAY__trAccount__r?.Website),
   };
+}
+
+function projectIsNamedInEventTitle(project, event) {
+  const title = normalizedSearchText(event.title ?? event.summary ?? "");
+  return projectKeywords(project.label).some((keyword) => title.includes(keyword));
+}
+
+function projectKeywords(label) {
+  const ignored = new Set([
+    "aod",
+    "boh",
+    "capacity",
+    "client",
+    "cops",
+    "eops",
+    "engineering",
+    "eng",
+    "implementation",
+    "internal",
+    "jumpstart",
+    "managed",
+    "migration",
+    "mops",
+    "project",
+    "restart",
+    "salesforce",
+    "sops",
+    "support",
+    "services",
+  ]);
+  return Array.from(new Set(normalizedSearchText(label).split(" ")))
+    .filter((keyword) => keyword.length >= 4 && !ignored.has(keyword));
+}
+
+function normalizedSearchText(value) {
+  return String(value).toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
 }
 
 function isInternalCalendarEvent(event) {
