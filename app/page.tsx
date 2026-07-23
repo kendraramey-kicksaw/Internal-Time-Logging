@@ -1190,8 +1190,10 @@ export default function Home() {
   const [integrationMessage, setIntegrationMessage] = useState("Checking integrations...");
   const [appUpdateStatus, setAppUpdateStatus] = useState<AppUpdateStatus | null>(null);
   const [appUpdateMessage, setAppUpdateMessage] = useState("Checking app updates...");
+  const [projectSyncStatus, setProjectSyncStatus] = useState("Project list pending");
   const [isImporting, setIsImporting] = useState(false);
   const [isRefreshingCalendar, setIsRefreshingCalendar] = useState(false);
+  const [isRefreshingProjects, setIsRefreshingProjects] = useState(false);
   const [isUpdatingApp, setIsUpdatingApp] = useState(false);
   const [suggestionStartWasEdited, setSuggestionStartWasEdited] = useState(false);
   const [liveSalesforceDefaultApplied, setLiveSalesforceDefaultApplied] = useState(false);
@@ -1431,7 +1433,7 @@ export default function Home() {
       setAppUpdateStatus(status);
       setAppUpdateMessage(
         status.updateAvailable
-          ? "Update available"
+          ? "App is out of date"
           : status.message ?? (status.local ? "App is up to date" : "Hosted deployment controls updates"),
       );
     } catch (error) {
@@ -1457,22 +1459,32 @@ export default function Home() {
   }
 
   async function loadProjectOptions() {
+    setIsRefreshingProjects(true);
+    setProjectSyncStatus(`Refreshing Salesforce projects for ${deliveryTeam}...`);
     try {
       const response = await fetch(apiUrl(`/api/salesforce/projects?deliveryTeam=${deliveryTeam}`));
       const body = await response.json();
       if (!response.ok) throw new Error(body.error ?? "Project refresh failed.");
 
-      setAvailableProjects((body as ProjectResponse).records);
-    } catch {
-      setAvailableProjects(
-        projectOptions.filter(
-          (project) =>
-            project.id === INTERNAL_PROJECT.id ||
-            project.label.includes(`(${deliveryTeam})`) ||
-            project.label.includes(`[${deliveryTeam}]`) ||
-            (deliveryTeam === "Engineering" && project.label.includes("(ENG)")),
-        ),
+      const records = (body as ProjectResponse).records;
+      setAvailableProjects(records);
+      setProjectSyncStatus(`Loaded ${records.length} Salesforce project${records.length === 1 ? "" : "s"} for ${deliveryTeam}.`);
+    } catch (error) {
+      const fallbackProjects = projectOptions.filter(
+        (project) =>
+          project.id === INTERNAL_PROJECT.id ||
+          project.label.includes(`(${deliveryTeam})`) ||
+          project.label.includes(`[${deliveryTeam}]`) ||
+          (deliveryTeam === "Engineering" && project.label.includes("(ENG)")),
       );
+      setAvailableProjects(fallbackProjects);
+      setProjectSyncStatus(
+        error instanceof Error
+          ? `${error.message}. Using ${fallbackProjects.length} fallback project${fallbackProjects.length === 1 ? "" : "s"}.`
+          : `Using ${fallbackProjects.length} fallback project${fallbackProjects.length === 1 ? "" : "s"}.`,
+      );
+    } finally {
+      setIsRefreshingProjects(false);
     }
   }
 
@@ -1542,6 +1554,12 @@ export default function Home() {
       return "sync-status";
     }
     return "sync-status failed";
+  }
+
+  function appUpdateStatusClass() {
+    if (/failed|error/i.test(appUpdateMessage)) return "action-status failed";
+    if (appUpdateStatus?.updateAvailable) return "action-status warning";
+    return "action-status live";
   }
 
   function integrationClass(provider: ProviderConnectionStatus | undefined) {
@@ -1625,12 +1643,26 @@ export default function Home() {
           </p>
         </div>
         <div className="header-actions">
-          <button type="button" className="primary" onClick={importToSalesforce} disabled={isImporting}>
-            {isImporting ? "Importing..." : "Import to Salesforce"}
-          </button>
-          <button type="button" onClick={copyPayload}>
-            Copy Salesforce Payload
-          </button>
+          <div className="header-button-bar">
+            <button type="button" className="primary" onClick={importToSalesforce} disabled={isImporting}>
+              {isImporting ? "Importing..." : "Import to Salesforce"}
+            </button>
+            <button type="button" onClick={copyPayload}>
+              Copy Salesforce Payload
+            </button>
+            <button type="button" onClick={loadAppUpdateStatus}>
+              Check for Updates
+            </button>
+            <button
+              type="button"
+              className="primary"
+              disabled={!appUpdateStatus?.local || !appUpdateStatus.updateAvailable || appUpdateStatus.dirty || isUpdatingApp}
+              onClick={updateApp}
+            >
+              {isUpdatingApp ? "Updating..." : "Update App"}
+            </button>
+          </div>
+          <p className={appUpdateStatusClass()}>{appUpdateMessage}</p>
           {importStatus ? <p className="action-status">{importStatus}</p> : null}
         </div>
       </header>
@@ -1646,25 +1678,6 @@ export default function Home() {
           </button>
         </div>
         <div className="integration-grid">
-          <div className="integration-card preference-card">
-            <div>
-              <span>Delivery Team</span>
-              <strong>{deliveryTeam}</strong>
-            </div>
-            <label className="compact-label">
-              Team
-              <select
-                value={deliveryTeam}
-                onChange={(event) => setDeliveryTeam(event.target.value as DeliveryTeam)}
-              >
-                {deliveryTeams.map((team) => (
-                  <option key={team} value={team}>
-                    {team}
-                  </option>
-                ))}
-              </select>
-            </label>
-          </div>
           <div className="integration-card">
             <div>
               <span>Google Calendar</span>
@@ -1729,28 +1742,6 @@ export default function Home() {
               </button>
             </div>
           </div>
-          <div className="integration-card">
-            <div>
-              <span>App Updates</span>
-              <strong className={appUpdateStatus?.updateAvailable ? "integration-state ready" : "integration-state connected"}>
-                {appUpdateStatus?.updateAvailable ? "Update available" : "Current"}
-              </strong>
-              <p className="card-note">{appUpdateMessage}</p>
-            </div>
-            <div className="integration-actions">
-              <button type="button" onClick={loadAppUpdateStatus}>
-                Check
-              </button>
-              <button
-                type="button"
-                className="primary"
-                disabled={!appUpdateStatus?.local || !appUpdateStatus.updateAvailable || appUpdateStatus.dirty || isUpdatingApp}
-                onClick={updateApp}
-              >
-                {isUpdatingApp ? "Updating..." : "Update"}
-              </button>
-            </div>
-          </div>
         </div>
       </section>
 
@@ -1805,7 +1796,7 @@ export default function Home() {
       </section>
 
       <section className="panel">
-        <div className="section-heading">
+        <div className="section-heading suggested-heading">
           <div>
             <div className="heading-with-help">
               <h2>Suggested Time Entries</h2>
@@ -1823,12 +1814,32 @@ export default function Home() {
                 </div>
               </details>
             </div>
-            <p className={`calendar-file-state ${calendarFileState}`}>
-              {usesLocalCalendarFile
-                ? `Calendar file last synced: ${formatDateTime(calendarLastSyncedAt)}`
-                : "Google Calendar sync: live connection"}
-            </p>
+            <div className="section-messages" aria-live="polite">
+              <p className={calendarStatusClass()}>{calendarSyncStatus}</p>
+              <p className="sync-status">{projectSyncStatus}</p>
+              <p className={`calendar-file-state ${calendarFileState}`}>
+                {usesLocalCalendarFile
+                  ? `Calendar file last synced: ${formatDateTime(calendarLastSyncedAt)}`
+                  : "Google Calendar sync: live connection"}
+              </p>
+              {suggestedStatus ? <p className="table-status error">{suggestedStatus}</p> : null}
+            </div>
           </div>
+        </div>
+        <div className="suggested-controls">
+          <label className="team-filter">
+            Delivery Team
+            <select
+              value={deliveryTeam}
+              onChange={(event) => setDeliveryTeam(event.target.value as DeliveryTeam)}
+            >
+              {deliveryTeams.map((team) => (
+                <option key={team} value={team}>
+                  {team}
+                </option>
+              ))}
+            </select>
+          </label>
           <div className="date-filters">
             <label>
               Start
@@ -1852,11 +1863,13 @@ export default function Home() {
               />
             </label>
           </div>
-          <p className={calendarStatusClass()}>{calendarSyncStatus}</p>
-          <button type="button" onClick={copyCodexCalendarSyncPrompt}>
+          <button type="button" className="primary" onClick={loadProjectOptions} disabled={isRefreshingProjects}>
+            {isRefreshingProjects ? "Refreshing Projects..." : "Refresh Projects"}
+          </button>
+          <button type="button" className="primary" onClick={copyCodexCalendarSyncPrompt}>
             Sync Calendar with Codex
           </button>
-          <button type="button" onClick={refreshCalendarSuggestions} disabled={isRefreshingCalendar}>
+          <button type="button" className="primary" onClick={refreshCalendarSuggestions} disabled={isRefreshingCalendar}>
             {isRefreshingCalendar ? "Refreshing..." : "Refresh Suggestions"}
           </button>
         </div>
@@ -1963,7 +1976,6 @@ export default function Home() {
             </tbody>
           </table>
         </div>
-        {suggestedStatus ? <p className="table-status error">{suggestedStatus}</p> : null}
       </section>
 
       <section className="panel">

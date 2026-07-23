@@ -136,11 +136,14 @@ label {
   display: grid;
   justify-items: end;
   gap: 8px;
-  min-width: 220px;
+  min-width: min(100%, 720px);
 }
 
-.header-actions button {
-  width: 100%;
+.header-button-bar {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
 }
 
 .action-status,
@@ -160,8 +163,21 @@ label {
 }
 
 .action-status {
-  max-width: 260px;
+  max-width: 520px;
   text-align: right;
+}
+
+.action-status.live {
+  color: var(--accent-strong);
+}
+
+.action-status.warning,
+.sync-status.warning {
+  color: #775d13;
+}
+
+.action-status.failed {
+  color: var(--danger);
 }
 
 .eyebrow {
@@ -257,10 +273,6 @@ h2 {
   border-radius: 8px;
   background: #fafbf8;
   padding: 12px;
-}
-
-.preference-card {
-  align-items: end;
 }
 
 .integration-card span {
@@ -442,6 +454,22 @@ h2 {
   align-self: end;
 }
 
+.suggested-heading {
+  align-items: flex-start;
+  margin-bottom: 10px;
+}
+
+.section-messages {
+  display: grid;
+  gap: 5px;
+  margin-top: 8px;
+}
+
+.section-messages .table-status,
+.section-messages .calendar-file-state {
+  margin: 0;
+}
+
 .heading-with-help {
   position: relative;
   display: inline-flex;
@@ -508,6 +536,22 @@ h2 {
   gap: 10px;
 }
 
+.suggested-controls {
+  display: grid;
+  grid-template-columns: minmax(150px, 190px) auto repeat(3, max-content);
+  align-items: end;
+  gap: 10px;
+  margin-bottom: 14px;
+}
+
+.suggested-controls button {
+  white-space: nowrap;
+}
+
+.team-filter {
+  min-width: 0;
+}
+
 .table-wrap {
   overflow-x: auto;
   border: 1px solid var(--line);
@@ -571,6 +615,60 @@ th {
 
 .manual-table {
   min-width: 1160px;
+}
+
+.suggested-table {
+  min-width: 1360px;
+}
+
+.suggested-table th:nth-child(1),
+.suggested-table td:nth-child(1) {
+  width: 132px;
+}
+
+.suggested-table th:nth-child(2),
+.suggested-table td:nth-child(2) {
+  width: 430px;
+}
+
+.suggested-table th:nth-child(3),
+.suggested-table td:nth-child(3) {
+  width: 86px;
+}
+
+.suggested-table th:nth-child(4),
+.suggested-table td:nth-child(4) {
+  width: 86px;
+}
+
+.suggested-table th:nth-child(5),
+.suggested-table td:nth-child(5) {
+  width: 172px;
+}
+
+.suggested-table th:nth-child(6),
+.suggested-table td:nth-child(6) {
+  width: 350px;
+}
+
+.suggested-table th:nth-child(7),
+.suggested-table td:nth-child(7) {
+  width: 104px;
+}
+
+.suggested-table td:nth-child(2) input,
+.suggested-table td:nth-child(5) select,
+.suggested-table td:nth-child(6) textarea,
+.manual-table td:nth-child(2) input,
+.manual-table td:nth-child(5) select,
+.manual-table td:nth-child(6) textarea {
+  font-size: 0.82rem;
+  line-height: 1.28;
+}
+
+.suggested-table td:nth-child(6) textarea,
+.manual-table td:nth-child(6) textarea {
+  min-height: 54px;
 }
 
 .salesforce-table th,
@@ -718,11 +816,20 @@ input:disabled {
 
   .header-actions {
     justify-items: stretch;
+    min-width: 0;
+  }
+
+  .header-button-bar {
+    justify-content: flex-start;
   }
 
   .action-status {
     max-width: none;
     text-align: left;
+  }
+
+  .suggested-controls {
+    grid-template-columns: 1fr;
   }
 }
 

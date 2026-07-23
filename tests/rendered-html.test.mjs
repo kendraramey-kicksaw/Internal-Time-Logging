@@ -39,7 +39,10 @@ test("server-renders the calendar time-entry workspace", async () => {
   assert.match(html, /Google Calendar/);
   assert.match(html, /Salesforce/);
   assert.match(html, /Delivery Team/);
-  assert.match(html, /App Updates/);
+  assert.match(html, /Check for Updates/);
+  assert.match(html, /Update App/);
+  assert.match(html, /Refresh Projects/);
+  assert.match(html, /Project list pending/);
   assert.match(html, /Sync Calendar with Codex/);
   assert.match(html, /Refresh Suggestions/);
   assert.match(html, /Calendar file last synced/);
