@@ -34,7 +34,9 @@ test("server-renders the calendar time-entry workspace", async () => {
   assert.match(html, /Manual Entry/);
   assert.match(html, /Salesforce TaskRay Time/);
   assert.match(html, /Copy Salesforce Payload/);
+  assert.match(html, /Import to Salesforce/);
   assert.match(html, /Refresh Calendar/);
+  assert.match(html, /Suggested entry rules/);
   assert.match(html, /Remove/);
   assert.match(html, /Feature &amp; PC Sync/);
   assert.match(html, /TIME-178790/);

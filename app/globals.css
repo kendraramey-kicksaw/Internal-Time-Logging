@@ -72,6 +72,11 @@ button.primary:hover {
   color: #ffffff;
 }
 
+button:disabled {
+  cursor: wait;
+  opacity: 0.62;
+}
+
 button.danger {
   border-color: #e2b7b7;
   background: var(--danger-soft);
@@ -125,6 +130,30 @@ label {
   justify-content: space-between;
   gap: 24px;
   padding-bottom: 18px;
+}
+
+.header-actions {
+  display: grid;
+  justify-items: end;
+  gap: 8px;
+  min-width: 220px;
+}
+
+.header-actions button {
+  width: 100%;
+}
+
+.action-status,
+.sync-status {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.82rem;
+  font-weight: 700;
+}
+
+.action-status {
+  max-width: 260px;
+  text-align: right;
 }
 
 .eyebrow {
@@ -227,6 +256,66 @@ h2 {
   align-self: end;
 }
 
+.heading-with-help {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.help-bubble {
+  position: relative;
+}
+
+.help-bubble summary {
+  display: grid;
+  width: 24px;
+  height: 24px;
+  place-items: center;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--panel-alt);
+  color: var(--accent-strong);
+  cursor: pointer;
+  font-size: 0.82rem;
+  font-weight: 900;
+  list-style: none;
+}
+
+.help-bubble summary::-webkit-details-marker {
+  display: none;
+}
+
+.help-card {
+  position: absolute;
+  top: 32px;
+  left: 0;
+  z-index: 5;
+  width: min(420px, calc(100vw - 48px));
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--panel);
+  box-shadow: 0 16px 40px rgba(28, 36, 48, 0.16);
+  color: var(--foreground);
+  padding: 14px 16px;
+}
+
+.help-card strong {
+  display: block;
+  margin-bottom: 8px;
+  font-size: 0.82rem;
+}
+
+.help-card ul {
+  display: grid;
+  gap: 7px;
+  margin: 0;
+  padding-left: 18px;
+  color: var(--muted);
+  font-size: 0.84rem;
+  line-height: 1.35;
+}
+
 .date-filters {
   display: grid;
   grid-template-columns: repeat(2, 150px);
@@ -256,7 +345,8 @@ td {
   vertical-align: top;
 }
 
-.suggested-table td {
+.suggested-table td,
+.manual-table td {
   vertical-align: middle;
 }
 
@@ -278,6 +368,10 @@ th {
 .salesforce-table {
   min-width: 1540px;
   table-layout: fixed;
+}
+
+.manual-table {
+  min-width: 1160px;
 }
 
 .salesforce-table th,
@@ -402,18 +496,6 @@ input:disabled {
   text-decoration: underline;
 }
 
-.manual-grid {
-  display: grid;
-  grid-template-columns: 140px minmax(260px, 1.25fr) 100px 92px 210px minmax(220px, 1fr);
-  gap: 12px;
-  margin-top: 14px;
-  align-items: center;
-}
-
-.notes-field {
-  grid-column: span 1;
-}
-
 @media (max-width: 1040px) {
   .topbar,
   .section-heading {
@@ -425,8 +507,13 @@ input:disabled {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
-  .manual-grid {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
+  .header-actions {
+    justify-items: stretch;
+  }
+
+  .action-status {
+    max-width: none;
+    text-align: left;
   }
 }
 
@@ -437,7 +524,6 @@ input:disabled {
   }
 
   .metrics,
-  .manual-grid,
   .date-filters {
     grid-template-columns: 1fr;
   }

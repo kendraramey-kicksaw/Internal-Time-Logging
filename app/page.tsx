@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 
 type PricingStructure = "Capacity" | "T&M" | "Hybrid" | "Internal";
 type RecordTypeDeveloperName = "Client_Work" | "Internal_Project" | "Internal_Work";
@@ -31,6 +31,10 @@ type SalesforceTimeEntry = Omit<TimeEntry, "source"> & {
   recordName: string;
   category: string;
   timeType: string;
+};
+
+type SalesforceTimeEntryResponse = {
+  records: SalesforceTimeEntry[];
 };
 
 type CalendarEvent = {
@@ -1011,7 +1015,11 @@ export default function Home() {
   const [suggestions, setSuggestions] = useState(() =>
     buildCalendarSuggestions(defaultSuggestionStart, defaultSuggestionEnd),
   );
+  const [liveSalesforceRows, setLiveSalesforceRows] = useState(salesforceRows);
   const [manualDraft, setManualDraft] = useState(blankEntry());
+  const [salesforceSyncStatus, setSalesforceSyncStatus] = useState("Salesforce snapshot loaded");
+  const [importStatus, setImportStatus] = useState("");
+  const [isImporting, setIsImporting] = useState(false);
   const [suggestionSort, setSuggestionSort] = useState<SortConfig<SuggestedSortKey>>({
     key: "date",
     direction: "asc",
@@ -1034,23 +1042,29 @@ export default function Home() {
   const filteredSalesforceRows = useMemo(
     () =>
       sortedSalesforceRows(
-        salesforceRows.filter((entry) => inRange(entry, salesforceStart, salesforceEnd)),
+        liveSalesforceRows.filter((entry) => inRange(entry, salesforceStart, salesforceEnd)),
         salesforceSort,
       ),
-    [salesforceEnd, salesforceSort, salesforceStart],
+    [liveSalesforceRows, salesforceEnd, salesforceSort, salesforceStart],
   );
 
   const totals = useMemo(() => {
     const suggestedHours = filteredSuggestions.reduce((sum, entry) => sum + entry.hours, 0);
     const salesforceHours = filteredSalesforceRows.reduce((sum, entry) => sum + entry.hours, 0);
     const rowsToReview = filteredSuggestions.length;
-    const lastSalesforceDate = salesforceRows.reduce(
+    const lastSalesforceDate = liveSalesforceRows.reduce(
       (latest, entry) => (entry.date > latest ? entry.date : latest),
       "",
     );
 
     return { suggestedHours, salesforceHours, rowsToReview, lastSalesforceDate };
-  }, [filteredSalesforceRows, filteredSuggestions]);
+  }, [filteredSalesforceRows, filteredSuggestions, liveSalesforceRows]);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    loadSalesforceRows(controller.signal);
+    return () => controller.abort();
+  }, [salesforceEnd, salesforceStart]);
 
   function updateSuggestion(id: string, updates: Partial<TimeEntry>) {
     setSuggestions((current) =>
@@ -1086,6 +1100,25 @@ export default function Home() {
     setSuggestions([...manualEntries, ...buildCalendarSuggestions(suggestionStart, suggestionEnd)]);
   }
 
+  async function loadSalesforceRows(signal?: AbortSignal) {
+    setSalesforceSyncStatus("Refreshing Salesforce...");
+    try {
+      const response = await fetch(
+        `/api/salesforce/time-entries?start=${salesforceStart}&end=${salesforceEnd}`,
+        { signal },
+      );
+      const body = await response.json();
+
+      if (!response.ok) throw new Error(body.error ?? "Salesforce refresh failed.");
+
+      setLiveSalesforceRows((body as SalesforceTimeEntryResponse).records);
+      setSalesforceSyncStatus("Salesforce live");
+    } catch (error) {
+      if (error instanceof DOMException && error.name === "AbortError") return;
+      setSalesforceSyncStatus(error instanceof Error ? error.message : "Salesforce refresh failed.");
+    }
+  }
+
   function startSalesforceColumnResize(key: SalesforceColumnKey, clientX: number) {
     const startingWidth = salesforceColumnWidths[key];
 
@@ -1105,6 +1138,35 @@ export default function Home() {
 
   function copyPayload() {
     navigator.clipboard.writeText(JSON.stringify(toSalesforcePayload(filteredSuggestions), null, 2));
+    setImportStatus("Payload copied.");
+  }
+
+  async function importToSalesforce() {
+    const payload = toSalesforcePayload(filteredSuggestions);
+    if (!payload.length) {
+      setImportStatus("No suggested rows to import.");
+      return;
+    }
+
+    setIsImporting(true);
+    setImportStatus("Importing to Salesforce...");
+    try {
+      const response = await fetch("/api/salesforce/time-entries", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      const body = await response.json();
+
+      if (!response.ok) throw new Error(body.error ?? "Salesforce import failed.");
+
+      setImportStatus(`Imported ${payload.length} row${payload.length === 1 ? "" : "s"} to Salesforce.`);
+      await loadSalesforceRows();
+    } catch (error) {
+      setImportStatus(error instanceof Error ? error.message : "Salesforce import failed.");
+    } finally {
+      setIsImporting(false);
+    }
   }
 
   return (
@@ -1123,9 +1185,15 @@ export default function Home() {
             after the latest TaskRay Time record.
           </p>
         </div>
-        <button type="button" className="primary" onClick={copyPayload}>
-          Copy Salesforce Payload
-        </button>
+        <div className="header-actions">
+          <button type="button" className="primary" onClick={importToSalesforce} disabled={isImporting}>
+            {isImporting ? "Importing..." : "Import to Salesforce"}
+          </button>
+          <button type="button" onClick={copyPayload}>
+            Copy Salesforce Payload
+          </button>
+          {importStatus ? <p className="action-status">{importStatus}</p> : null}
+        </div>
       </header>
 
       <section className="metrics" aria-label="Month to date totals">
@@ -1150,7 +1218,22 @@ export default function Home() {
       <section className="panel">
         <div className="section-heading">
           <div>
-            <h2>Suggested Time Entries</h2>
+            <div className="heading-with-help">
+              <h2>Suggested Time Entries</h2>
+              <details className="help-bubble">
+                <summary aria-label="Suggested time entry rules">?</summary>
+                <div className="help-card">
+                  <strong>Suggested entry rules</strong>
+                  <ul>
+                    <li>Declined, transparent, Focus Time, OOO, and out-of-office events are ignored.</li>
+                    <li>Same-day calendar entries with the same project, billable value, and activity type are consolidated.</li>
+                    <li>Calendar titles become Notes, with duplicate same-day titles listed once.</li>
+                    <li>Kicksaw projects are non-billable and the checkbox is locked.</li>
+                    <li>Refresh Calendar regenerates the selected date range while preserving manual rows.</li>
+                  </ul>
+                </div>
+              </details>
+            </div>
           </div>
           <div className="date-filters">
             <label>
@@ -1277,78 +1360,99 @@ export default function Home() {
           <div>
             <h2>Manual Entry</h2>
           </div>
-          <button type="button" className="primary" onClick={addManualEntry}>
-            Add Entry
-          </button>
         </div>
-        <div className="manual-grid">
-          <label>
-            Date
-            <input
-              type="date"
-              value={manualDraft.date}
-              onChange={(event) => setManualDraft({ ...manualDraft, date: event.target.value })}
-            />
-          </label>
-          <ProjectLookup
-            label="Project"
-            value={manualDraft.projectLabel}
-            showLabel={false}
-            onChange={(selectedProject) =>
-              setManualDraft({
-                ...manualDraft,
-                projectValue: selectedProject.idPricingStructure,
-                projectLabel: selectedProject.label,
-                billable: billableForProject(selectedProject, manualDraft.billable),
-              })
-            }
-          />
-          <label>
-            Hours
-            <input
-              type="number"
-              min="0"
-              step="0.25"
-              value={manualDraft.hours || ""}
-              onChange={(event) =>
-                setManualDraft({ ...manualDraft, hours: Number(event.target.value) })
-              }
-            />
-          </label>
-          <label className="manual-checkbox">
-            Billable
-            <input
-              type="checkbox"
-              checked={manualDraft.billable}
-              disabled={locksBillable(manualDraft.projectLabel)}
-              onChange={(event) =>
-                setManualDraft({ ...manualDraft, billable: event.target.checked })
-              }
-            />
-          </label>
-          <label>
-            Activity Type
-            <select
-              value={manualDraft.activityType}
-              onChange={(event) =>
-                setManualDraft({ ...manualDraft, activityType: event.target.value })
-              }
-            >
-              {activityTypes.map((type) => (
-                <option key={type} value={type}>
-                  {type}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label className="notes-field">
-            Notes
-            <textarea
-              value={manualDraft.notes}
-              onChange={(event) => setManualDraft({ ...manualDraft, notes: event.target.value })}
-              placeholder="Describe the work for Salesforce notes"
-            />
-          </label>
+        <div className="table-wrap">
+          <table className="manual-table">
+            <thead>
+              <tr>
+                <th>Date</th>
+                <th>Project</th>
+                <th>Hours</th>
+                <th>Billable</th>
+                <th>Activity Type</th>
+                <th>Notes</th>
+                <th>Add</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>
+                  <input
+                    aria-label="Manual entry date"
+                    type="date"
+                    value={manualDraft.date}
+                    onChange={(event) => setManualDraft({ ...manualDraft, date: event.target.value })}
+                  />
+                </td>
+                <td>
+                  <ProjectLookup
+                    label="Manual entry project"
+                    value={manualDraft.projectLabel}
+                    showLabel={false}
+                    onChange={(selectedProject) =>
+                      setManualDraft({
+                        ...manualDraft,
+                        projectValue: selectedProject.idPricingStructure,
+                        projectLabel: selectedProject.label,
+                        billable: billableForProject(selectedProject, manualDraft.billable),
+                      })
+                    }
+                  />
+                </td>
+                <td>
+                  <input
+                    aria-label="Manual entry hours"
+                    type="number"
+                    min="0"
+                    step="0.25"
+                    value={manualDraft.hours || ""}
+                    onChange={(event) =>
+                      setManualDraft({ ...manualDraft, hours: Number(event.target.value) })
+                    }
+                  />
+                </td>
+                <td className="checkbox-cell">
+                  <input
+                    aria-label="Manual entry billable"
+                    type="checkbox"
+                    checked={manualDraft.billable}
+                    disabled={locksBillable(manualDraft.projectLabel)}
+                    onChange={(event) =>
+                      setManualDraft({ ...manualDraft, billable: event.target.checked })
+                    }
+                  />
+                </td>
+                <td>
+                  <select
+                    aria-label="Manual entry activity type"
+                    value={manualDraft.activityType}
+                    onChange={(event) =>
+                      setManualDraft({ ...manualDraft, activityType: event.target.value })
+                    }
+                  >
+                    {activityTypes.map((type) => (
+                      <option key={type} value={type}>
+                        {type}
+                      </option>
+                    ))}
+                  </select>
+                </td>
+                <td>
+                  <textarea
+                    aria-label="Manual entry notes"
+                    value={manualDraft.notes}
+                    onChange={(event) => setManualDraft({ ...manualDraft, notes: event.target.value })}
+                    placeholder="Describe the work for Salesforce notes"
+                  />
+                </td>
+                <td>
+                  <button type="button" className="primary" onClick={addManualEntry}>
+                    Add Entry
+                  </button>
+                </td>
+              </tr>
+            </tbody>
+          </table>
         </div>
       </section>
 
@@ -1357,6 +1461,7 @@ export default function Home() {
           <div>
             <h2>Salesforce TaskRay Time</h2>
           </div>
+          <p className="sync-status">{salesforceSyncStatus}</p>
           <div className="date-filters">
             <label>
               Start
@@ -1375,6 +1480,9 @@ export default function Home() {
               />
             </label>
           </div>
+          <button type="button" onClick={() => loadSalesforceRows()}>
+            Refresh Salesforce
+          </button>
         </div>
         <div className="table-wrap">
           <table className="salesforce-table">
