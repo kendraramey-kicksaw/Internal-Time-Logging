@@ -206,12 +206,13 @@ h2 {
 
 .metrics {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(6, minmax(0, 1fr));
   gap: 10px;
   margin: 10px 0 14px;
 }
 
 .metrics > div,
+.project-dashboard,
 .panel {
   border: 1px solid var(--line);
   border-radius: 8px;
@@ -241,6 +242,78 @@ h2 {
 .metrics .needs-review {
   border-color: var(--warning-line);
   background: var(--warning-bg);
+}
+
+.project-dashboard {
+  display: grid;
+  gap: 14px;
+  margin: 0 0 16px;
+  padding: 16px 18px;
+}
+
+.dashboard-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.project-bars {
+  display: grid;
+  gap: 10px;
+}
+
+.project-bar {
+  display: grid;
+  gap: 6px;
+}
+
+.project-bar-label {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 12px;
+  align-items: center;
+  color: var(--foreground);
+  font-size: 0.86rem;
+}
+
+.project-bar-label span {
+  overflow-wrap: anywhere;
+}
+
+.project-bar-label strong {
+  font-size: 0.88rem;
+}
+
+.project-bar-track {
+  height: 10px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: var(--panel-alt);
+}
+
+.project-bar-track span {
+  display: block;
+  height: 100%;
+  min-width: 3px;
+  border-radius: inherit;
+  background: var(--accent);
+}
+
+.empty-state,
+.table-status {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.88rem;
+  font-weight: 700;
+}
+
+.table-status {
+  margin-top: 10px;
+}
+
+.table-status.error {
+  color: var(--danger);
 }
 
 .panel {
@@ -338,6 +411,10 @@ h2 {
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.7);
 }
 
+.salesforce-wrap {
+  overflow-x: auto;
+}
+
 table {
   width: 100%;
   min-width: 1160px;
@@ -383,7 +460,7 @@ th {
 }
 
 .salesforce-table {
-  min-width: 1540px;
+  min-width: 0;
   table-layout: fixed;
 }
 
@@ -398,6 +475,10 @@ th {
   white-space: normal;
   overflow-wrap: anywhere;
   word-break: normal;
+}
+
+.salesforce-table td {
+  vertical-align: top;
 }
 
 .salesforce-table th {
@@ -521,7 +602,7 @@ input:disabled {
   }
 
   .metrics {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
+    grid-template-columns: repeat(3, minmax(0, 1fr));
   }
 
   .header-actions {

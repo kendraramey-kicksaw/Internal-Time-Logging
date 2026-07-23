@@ -37,6 +37,8 @@ test("server-renders the calendar time-entry workspace", async () => {
   assert.match(html, /Import to Salesforce/);
   assert.match(html, /Refresh Calendar/);
   assert.match(html, /Calendar snapshot loaded/);
+  assert.match(html, /Time Logged This Week/);
+  assert.match(html, /Hours This Month by Project/);
   assert.match(html, /Suggested entry rules/);
   assert.match(html, /Actions/);
   assert.match(html, /Remove/);
@@ -66,5 +68,7 @@ test("keeps the starter preview out of the production screen", async () => {
   assert.match(page, /TASKRAY__Project__c/);
   assert.match(page, /TASKRAY__Task__c/);
   assert.match(page, /\/api\/calendar\/events/);
+  assert.match(page, /suggestedStatus/);
+  assert.match(page, /manualStatus/);
   assert.match(worker, /GOOGLE_CALENDAR_ACCESS_TOKEN/);
 });

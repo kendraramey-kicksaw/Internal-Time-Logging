@@ -87,14 +87,14 @@ const defaultSuggestionEnd = todayIso();
 const ownerId = "0054T000001in8HQAQ";
 const salesforceBaseUrl = "https://kicksaw.my.salesforce.com";
 const initialSalesforceColumnWidths: Record<SalesforceColumnKey, number> = {
-  date: 126,
-  recordName: 128,
-  projectLabel: 260,
-  hours: 84,
-  billable: 86,
-  activityType: 168,
-  timeType: 128,
-  notes: 580,
+  date: 112,
+  recordName: 96,
+  projectLabel: 190,
+  hours: 70,
+  billable: 70,
+  activityType: 132,
+  timeType: 108,
+  notes: 420,
 };
 
 const RECORD_TYPE_IDS: Record<RecordTypeDeveloperName, string> = {
@@ -823,6 +823,13 @@ function latestSalesforceDate(entries: Pick<SalesforceTimeEntry, "date">[]) {
   return entries.reduce((latest, entry) => (entry.date > latest ? entry.date : latest), "");
 }
 
+function weekStartIso(date: string) {
+  const currentDate = new Date(`${date}T00:00:00Z`);
+  const mondayOffset = (currentDate.getUTCDay() + 6) % 7;
+  currentDate.setUTCDate(currentDate.getUTCDate() - mondayOffset);
+  return currentDate.toISOString().slice(0, 10);
+}
+
 function defaultSuggestionStartFor(entries: Pick<SalesforceTimeEntry, "date">[]) {
   const latestDate = latestSalesforceDate(entries);
   return latestDate ? addDaysIso(latestDate, 1) : monthStart;
@@ -942,6 +949,19 @@ function sortedSalesforceRows(entries: SalesforceTimeEntry[], sortConfig: SortCo
       a.activityType.localeCompare(b.activityType);
     return (primary || fallback) * (sortConfig.direction === "asc" ? 1 : -1);
   });
+}
+
+function hoursByProject(entries: Pick<SalesforceTimeEntry, "hours" | "projectLabel">[]) {
+  const grouped = new Map<string, number>();
+
+  for (const entry of entries) {
+    grouped.set(entry.projectLabel, (grouped.get(entry.projectLabel) ?? 0) + entry.hours);
+  }
+
+  return Array.from(grouped, ([projectLabel, hours]) => ({
+    projectLabel,
+    hours: Number(hours.toFixed(2)),
+  })).sort((a, b) => b.hours - a.hours || a.projectLabel.localeCompare(b.projectLabel));
 }
 
 function nextSort<Key extends string>(current: SortConfig<Key>, key: Key): SortConfig<Key> {
@@ -1075,6 +1095,8 @@ export default function Home() {
   const [salesforceSyncStatus, setSalesforceSyncStatus] = useState("Salesforce snapshot loaded");
   const [calendarSyncStatus, setCalendarSyncStatus] = useState("Calendar snapshot loaded");
   const [importStatus, setImportStatus] = useState("");
+  const [suggestedStatus, setSuggestedStatus] = useState("");
+  const [manualStatus, setManualStatus] = useState("");
   const [isImporting, setIsImporting] = useState(false);
   const [isRefreshingCalendar, setIsRefreshingCalendar] = useState(false);
   const [suggestionStartWasEdited, setSuggestionStartWasEdited] = useState(false);
@@ -1112,9 +1134,26 @@ export default function Home() {
     const salesforceHours = filteredSalesforceRows.reduce((sum, entry) => sum + entry.hours, 0);
     const rowsToReview = filteredSuggestions.length;
     const lastSalesforceDate = latestSalesforceDate(liveSalesforceRows);
+    const weekStart = weekStartIso(defaultSuggestionEnd);
+    const weekEnd = addDaysIso(weekStart, 6);
+    const weeklySalesforceRows = liveSalesforceRows.filter((entry) => inRange(entry, weekStart, weekEnd));
+    const monthlySalesforceRows = liveSalesforceRows.filter((entry) => inRange(entry, monthStart, monthEnd));
+    const weekLoggedHours = weeklySalesforceRows.reduce((sum, entry) => sum + entry.hours, 0);
+    const monthLoggedHours = monthlySalesforceRows.reduce((sum, entry) => sum + entry.hours, 0);
+    const projectHours = hoursByProject(monthlySalesforceRows);
 
-    return { suggestedHours, salesforceHours, rowsToReview, lastSalesforceDate };
+    return {
+      suggestedHours,
+      salesforceHours,
+      rowsToReview,
+      lastSalesforceDate,
+      weekLoggedHours,
+      monthLoggedHours,
+      projectHours,
+    };
   }, [filteredSalesforceRows, filteredSuggestions, liveSalesforceRows]);
+
+  const largestProjectHours = totals.projectHours[0]?.hours ?? 0;
 
   useEffect(() => {
     const controller = new AbortController();
@@ -1138,10 +1177,11 @@ export default function Home() {
 
   function addManualEntry() {
     if (!entryIsComplete(manualDraft)) {
-      setImportStatus("Manual entry needs Date, Project, Hours, Activity Type, and Notes.");
+      setManualStatus("Manual entry needs Date, Project, Hours, Activity Type, and Notes.");
       return;
     }
 
+    setManualStatus("");
     setSuggestions((current) =>
       [
         ...current,
@@ -1154,6 +1194,7 @@ export default function Home() {
       ].sort(sortSuggested),
     );
     setManualDraft(blankEntry());
+    setImportStatus("Manual entry added to Suggested Time Entries.");
   }
 
   async function refreshCalendarSuggestions() {
@@ -1252,16 +1293,18 @@ export default function Home() {
   async function importToSalesforce() {
     const incompleteRow = filteredSuggestions.find((entry) => !entryIsComplete(entry));
     if (incompleteRow) {
-      setImportStatus("Suggested entries need Date, Project, Hours, Activity Type, and Notes before import.");
+      setSuggestedStatus("Suggested entries need Date, Project, Hours, Activity Type, and Notes before import.");
       return;
     }
 
     const payload = toSalesforcePayload(filteredSuggestions);
     if (!payload.length) {
-      setImportStatus("No suggested rows to import.");
+      setSuggestedStatus("No suggested rows to import.");
       return;
     }
 
+    setSuggestedStatus("");
+    setManualStatus("");
     setIsImporting(true);
     setImportStatus("Importing to Salesforce...");
     try {
@@ -1310,7 +1353,15 @@ export default function Home() {
         </div>
       </header>
 
-      <section className="metrics" aria-label="Month to date totals">
+      <section className="metrics" aria-label="Time logging dashboard">
+        <div>
+          <span>Time Logged This Week</span>
+          <strong>{formatHours(totals.weekLoggedHours)}</strong>
+        </div>
+        <div>
+          <span>Time Logged This Month</span>
+          <strong>{formatHours(totals.monthLoggedHours)}</strong>
+        </div>
         <div>
           <span>Latest Salesforce Entry</span>
           <strong>{totals.lastSalesforceDate}</strong>
@@ -1326,6 +1377,29 @@ export default function Home() {
         <div className={totals.rowsToReview ? "needs-review" : ""}>
           <span>Rows To Review</span>
           <strong>{totals.rowsToReview}</strong>
+        </div>
+      </section>
+
+      <section className="project-dashboard" aria-label="Hours this month by project">
+        <div className="dashboard-heading">
+          <h2>Hours This Month by Project</h2>
+        </div>
+        <div className="project-bars">
+          {totals.projectHours.length ? (
+            totals.projectHours.map((project) => (
+              <div className="project-bar" key={project.projectLabel}>
+                <div className="project-bar-label">
+                  <span>{project.projectLabel}</span>
+                  <strong>{formatHours(project.hours)}</strong>
+                </div>
+                <div className="project-bar-track">
+                  <span style={{ width: `${largestProjectHours ? (project.hours / largestProjectHours) * 100 : 0}%` }} />
+                </div>
+              </div>
+            ))
+          ) : (
+            <p className="empty-state">No Salesforce time entries found for this month.</p>
+          )}
         </div>
       </section>
 
@@ -1478,6 +1552,7 @@ export default function Home() {
             </tbody>
           </table>
         </div>
+        {suggestedStatus ? <p className="table-status error">{suggestedStatus}</p> : null}
       </section>
 
       <section className="panel">
@@ -1584,6 +1659,7 @@ export default function Home() {
             </tbody>
           </table>
         </div>
+        {manualStatus ? <p className="table-status error">{manualStatus}</p> : null}
       </section>
 
       <section className="panel">
@@ -1614,7 +1690,7 @@ export default function Home() {
             Refresh Salesforce
           </button>
         </div>
-        <div className="table-wrap">
+        <div className="table-wrap salesforce-wrap">
           <table className="salesforce-table">
             <colgroup>
               <col style={{ width: salesforceColumnWidths.date }} />
