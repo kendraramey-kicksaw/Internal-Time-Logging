@@ -41,6 +41,23 @@ type CalendarEventResponse = {
   records: CalendarEvent[];
 };
 
+type ProviderConnectionStatus = {
+  configured: boolean;
+  connected: boolean;
+  fallbackConfigured?: boolean;
+};
+
+type IntegrationStatusResponse = {
+  user?: {
+    email: string;
+    name: string;
+  };
+  providers: {
+    google: ProviderConnectionStatus;
+    salesforce: ProviderConnectionStatus;
+  };
+};
+
 type CalendarEvent = {
   id: string;
   title: string;
@@ -1097,6 +1114,8 @@ export default function Home() {
   const [importStatus, setImportStatus] = useState("");
   const [suggestedStatus, setSuggestedStatus] = useState("");
   const [manualStatus, setManualStatus] = useState("");
+  const [integrationStatus, setIntegrationStatus] = useState<IntegrationStatusResponse | null>(null);
+  const [integrationMessage, setIntegrationMessage] = useState("Checking integrations...");
   const [isImporting, setIsImporting] = useState(false);
   const [isRefreshingCalendar, setIsRefreshingCalendar] = useState(false);
   const [suggestionStartWasEdited, setSuggestionStartWasEdited] = useState(false);
@@ -1161,6 +1180,17 @@ export default function Home() {
     return () => controller.abort();
   }, [salesforceEnd, salesforceStart]);
 
+  useEffect(() => {
+    loadIntegrationStatus();
+    const url = new URL(window.location.href);
+    const message = url.searchParams.get("message");
+    const integration = url.searchParams.get("integration");
+    if (message && integration) {
+      setIntegrationMessage(`${integration}: ${message}`);
+      window.history.replaceState({}, "", url.pathname);
+    }
+  }, []);
+
   function updateSuggestion(id: string, updates: Partial<TimeEntry>) {
     setSuggestions((current) =>
       current.map((entry) => {
@@ -1189,7 +1219,7 @@ export default function Home() {
           ...manualDraft,
           id: `manual-${crypto.randomUUID()}`,
           billable: locksBillable(manualDraft.projectLabel) ? false : manualDraft.billable,
-          source: "Manual",
+          source: "Manual" as SuggestionSource,
         },
       ].sort(sortSuggested),
     );
@@ -1219,6 +1249,37 @@ export default function Home() {
       setCalendarSyncStatus(error instanceof Error ? error.message : "Calendar refresh failed.");
     } finally {
       setIsRefreshingCalendar(false);
+    }
+  }
+
+  async function loadIntegrationStatus() {
+    try {
+      const response = await fetch("/api/integrations/status");
+      const body = await response.json();
+      if (!response.ok) throw new Error(body.error ?? "Integration status failed.");
+
+      setIntegrationStatus(body as IntegrationStatusResponse);
+      setIntegrationMessage("Integration status loaded.");
+    } catch (error) {
+      setIntegrationMessage(error instanceof Error ? error.message : "Integration status failed.");
+    }
+  }
+
+  function connectProvider(provider: "google" | "salesforce") {
+    window.location.href = `/api/oauth/start?provider=${provider}`;
+  }
+
+  async function disconnectProvider(provider: "google" | "salesforce") {
+    setIntegrationMessage(`Disconnecting ${provider}...`);
+    try {
+      const response = await fetch(`/api/integrations/disconnect?provider=${provider}`, { method: "POST" });
+      const body = await response.json();
+      if (!response.ok) throw new Error(body.error ?? "Disconnect failed.");
+
+      setIntegrationMessage(`${provider} disconnected.`);
+      await loadIntegrationStatus();
+    } catch (error) {
+      setIntegrationMessage(error instanceof Error ? error.message : "Disconnect failed.");
     }
   }
 
@@ -1266,6 +1327,12 @@ export default function Home() {
       return "sync-status";
     }
     return "sync-status failed";
+  }
+
+  function integrationClass(provider: ProviderConnectionStatus | undefined) {
+    if (provider?.connected) return "integration-state connected";
+    if (provider?.configured) return "integration-state ready";
+    return "integration-state missing";
   }
 
   function startSalesforceColumnResize(key: SalesforceColumnKey, clientX: number) {
@@ -1352,6 +1419,80 @@ export default function Home() {
           {importStatus ? <p className="action-status">{importStatus}</p> : null}
         </div>
       </header>
+
+      <section className="integration-panel" aria-label="Integration connections">
+        <div className="integration-heading">
+          <div>
+            <h2>Connections</h2>
+            <p>{integrationStatus?.user?.email ?? integrationMessage}</p>
+          </div>
+          <button type="button" onClick={loadIntegrationStatus}>
+            Refresh Status
+          </button>
+        </div>
+        <div className="integration-grid">
+          <div className="integration-card">
+            <div>
+              <span>Google Calendar</span>
+              <strong className={integrationClass(integrationStatus?.providers.google)}>
+                {integrationStatus?.providers.google.connected
+                  ? "Connected"
+                  : integrationStatus?.providers.google.configured
+                    ? "Ready to connect"
+                    : "Needs OAuth setup"}
+              </strong>
+            </div>
+            <div className="integration-actions">
+              <button
+                type="button"
+                className="primary"
+                disabled={!integrationStatus?.providers.google.configured}
+                onClick={() => connectProvider("google")}
+              >
+                Connect
+              </button>
+              <button
+                type="button"
+                disabled={!integrationStatus?.providers.google.connected}
+                onClick={() => disconnectProvider("google")}
+              >
+                Disconnect
+              </button>
+            </div>
+          </div>
+          <div className="integration-card">
+            <div>
+              <span>Salesforce</span>
+              <strong className={integrationClass(integrationStatus?.providers.salesforce)}>
+                {integrationStatus?.providers.salesforce.connected
+                  ? "Connected"
+                  : integrationStatus?.providers.salesforce.configured
+                    ? "Ready to connect"
+                    : integrationStatus?.providers.salesforce.fallbackConfigured
+                      ? "Using shared fallback"
+                      : "Needs OAuth setup"}
+              </strong>
+            </div>
+            <div className="integration-actions">
+              <button
+                type="button"
+                className="primary"
+                disabled={!integrationStatus?.providers.salesforce.configured}
+                onClick={() => connectProvider("salesforce")}
+              >
+                Connect
+              </button>
+              <button
+                type="button"
+                disabled={!integrationStatus?.providers.salesforce.connected}
+                onClick={() => disconnectProvider("salesforce")}
+              >
+                Disconnect
+              </button>
+            </div>
+          </div>
+        </div>
+      </section>
 
       <section className="metrics" aria-label="Time logging dashboard">
         <div>

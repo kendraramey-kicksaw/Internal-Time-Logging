@@ -8,9 +8,15 @@ interface Env {
   SALESFORCE_ACCESS_TOKEN?: string;
   SALESFORCE_API_VERSION?: string;
   SALESFORCE_INSTANCE_URL?: string;
+  SALESFORCE_CLIENT_ID?: string;
+  SALESFORCE_CLIENT_SECRET?: string;
+  SALESFORCE_LOGIN_URL?: string;
   GOOGLE_CALENDAR_ACCESS_TOKEN?: string;
   GOOGLE_CALENDAR_ID?: string;
   GOOGLE_CALENDAR_TIMEZONE?: string;
+  GOOGLE_CLIENT_ID?: string;
+  GOOGLE_CLIENT_SECRET?: string;
+  OAUTH_TOKEN_SECRET?: string;
   IMAGES: {
     input(stream: ReadableStream): {
       transform(options: Record<string, unknown>): {
@@ -28,8 +34,10 @@ interface ExecutionContext {
 const TASKRAY_TIME_OBJECT = "TASKRAY__trTaskTime__c";
 const TASKRAY_TIME_OWNER_ID = "0054T000001in8HQAQ";
 const DEFAULT_SALESFORCE_API_VERSION = "v67.0";
+const DEFAULT_SALESFORCE_LOGIN_URL = "https://login.salesforce.com";
 const DEFAULT_GOOGLE_CALENDAR_ID = "primary";
 const DEFAULT_GOOGLE_CALENDAR_TIMEZONE = "America/Toronto";
+const OAUTH_CALLBACK_PATH = "/api/oauth/callback";
 const CRISIS_PROJECT = {
   id: "a0uQh000004SaXhIAK",
   label: "Crisis24 - OnSolve Migration - (SOPS)",
@@ -101,6 +109,37 @@ type GoogleCalendarEventsResponse = {
   nextPageToken?: string;
 };
 
+type Provider = "google" | "salesforce";
+
+type OAuthConnectionRow = {
+  user_email: string;
+  provider: Provider;
+  access_token: string;
+  refresh_token: string | null;
+  token_expires_at: number | null;
+  instance_url: string | null;
+  external_user_id: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+type OAuthTokenResponse = {
+  access_token?: string;
+  refresh_token?: string;
+  expires_in?: number;
+  instance_url?: string;
+  id?: string;
+  error?: string;
+  error_description?: string;
+};
+
+type SalesforceConnection = {
+  accessToken: string;
+  apiVersion: string;
+  instanceUrl: string;
+  ownerId: string;
+};
+
 // Image security config. SVG sources with .svg extension auto-skip the
 // optimization endpoint on the client side (served directly, no proxy).
 // To route SVGs through the optimizer (with security headers), set
@@ -110,6 +149,26 @@ type GoogleCalendarEventsResponse = {
 const worker = {
   async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
     const url = new URL(request.url);
+
+    if (url.pathname === "/api/integrations/status") {
+      if (request.method === "GET") return getIntegrationStatus(request, env);
+      return jsonResponse({ error: "Method not allowed" }, 405);
+    }
+
+    if (url.pathname === "/api/integrations/disconnect") {
+      if (request.method === "POST") return disconnectIntegration(request, env);
+      return jsonResponse({ error: "Method not allowed" }, 405);
+    }
+
+    if (url.pathname === "/api/oauth/start") {
+      if (request.method === "GET") return startOAuth(request, env);
+      return jsonResponse({ error: "Method not allowed" }, 405);
+    }
+
+    if (url.pathname === OAUTH_CALLBACK_PATH) {
+      if (request.method === "GET") return finishOAuth(request, env);
+      return jsonResponse({ error: "Method not allowed" }, 405);
+    }
 
     if (url.pathname === "/api/calendar/events") {
       if (request.method === "GET") return getGoogleCalendarEvents(request, env);
@@ -140,7 +199,7 @@ const worker = {
 export default worker;
 
 async function getSalesforceTimeEntries(request: Request, env?: Env): Promise<Response> {
-  const connection = salesforceConnection(env);
+  const connection = await salesforceConnection(request, env);
   if (!connection) return jsonResponse({ error: "Salesforce connection is not configured." }, 503);
 
   const url = new URL(request.url);
@@ -153,14 +212,14 @@ async function getSalesforceTimeEntries(request: Request, env?: Env): Promise<Re
     "TASKRAY__Hours__c, TASKRAY__Billable__c, Activity_Type__c, TASKRAY__trTimeType__c,",
     "Notes__c, Category__c",
     `FROM ${TASKRAY_TIME_OBJECT}`,
-    `WHERE TASKRAY__Owner__c = '${TASKRAY_TIME_OWNER_ID}'`,
+    `WHERE TASKRAY__Owner__c = '${connection.ownerId}'`,
     `AND TASKRAY__Date__c >= ${start}`,
     `AND TASKRAY__Date__c <= ${end}`,
     "ORDER BY TASKRAY__Date__c DESC, TASKRAY__Project__r.Name ASC, Activity_Type__c ASC",
   ].join(" ");
 
   const response = await salesforceFetch<SalesforceQueryResponse>(
-    env,
+    connection,
     `/services/data/${connection.apiVersion}/query?q=${encodeURIComponent(query)}`,
   );
   if (!response.ok) return response.error;
@@ -184,7 +243,7 @@ async function getSalesforceTimeEntries(request: Request, env?: Env): Promise<Re
 }
 
 async function createSalesforceTimeEntries(request: Request, env?: Env): Promise<Response> {
-  const connection = salesforceConnection(env);
+  const connection = await salesforceConnection(request, env);
   if (!connection) return jsonResponse({ error: "Salesforce connection is not configured." }, 503);
 
   let records: unknown;
@@ -199,7 +258,7 @@ async function createSalesforceTimeEntries(request: Request, env?: Env): Promise
   }
 
   const response = await salesforceFetch<SalesforceCompositeResult>(
-    env,
+    connection,
     `/services/data/${connection.apiVersion}/composite/sobjects`,
     {
       method: "POST",
@@ -225,7 +284,9 @@ async function createSalesforceTimeEntries(request: Request, env?: Env): Promise
 }
 
 async function getGoogleCalendarEvents(request: Request, env?: Env): Promise<Response> {
-  const accessToken = env?.GOOGLE_CALENDAR_ACCESS_TOKEN ?? process.env.GOOGLE_CALENDAR_ACCESS_TOKEN;
+  const user = authenticatedUser(request);
+  const googleConnection = user ? await connectionForUser(env, user.email, "google") : null;
+  const accessToken = googleConnection?.accessToken ?? env?.GOOGLE_CALENDAR_ACCESS_TOKEN ?? process.env.GOOGLE_CALENDAR_ACCESS_TOKEN;
   if (!accessToken) {
     return jsonResponse({ error: "Google Calendar connection is not configured." }, 503);
   }
@@ -278,7 +339,123 @@ async function getGoogleCalendarEvents(request: Request, env?: Env): Promise<Res
   });
 }
 
-function salesforceConnection(env?: Env) {
+async function getIntegrationStatus(request: Request, env?: Env): Promise<Response> {
+  const user = authenticatedUser(request);
+  if (!user) return jsonResponse({ error: "Signed-in user email is required." }, 401);
+
+  await ensureOAuthSchema(env);
+  const google = await connectionRow(env, user.email, "google");
+  const salesforce = await connectionRow(env, user.email, "salesforce");
+
+  return jsonResponse({
+    user,
+    providers: {
+      google: {
+        configured: oauthConfigured(env, "google"),
+        connected: Boolean(google),
+      },
+      salesforce: {
+        configured: oauthConfigured(env, "salesforce"),
+        connected: Boolean(salesforce),
+        fallbackConfigured: Boolean(salesforceEnvConnection(env)),
+      },
+    },
+  });
+}
+
+async function disconnectIntegration(request: Request, env?: Env): Promise<Response> {
+  const user = authenticatedUser(request);
+  if (!user) return jsonResponse({ error: "Signed-in user email is required." }, 401);
+
+  const provider = providerFromUrl(request);
+  if (!provider) return jsonResponse({ error: "Provider must be google or salesforce." }, 400);
+  if (!env?.DB) return jsonResponse({ error: "Connection storage is not configured." }, 503);
+
+  await ensureOAuthSchema(env);
+  await env.DB.prepare("DELETE FROM oauth_connections WHERE user_email = ? AND provider = ?")
+    .bind(user.email, provider)
+    .run();
+
+  return jsonResponse({ ok: true });
+}
+
+async function startOAuth(request: Request, env?: Env): Promise<Response> {
+  const user = authenticatedUser(request);
+  if (!user) return jsonResponse({ error: "Signed-in user email is required." }, 401);
+
+  const provider = providerFromUrl(request);
+  if (!provider) return jsonResponse({ error: "Provider must be google or salesforce." }, 400);
+  if (!oauthConfigured(env, provider)) return jsonResponse({ error: `${providerLabel(provider)} OAuth is not configured.` }, 503);
+
+  const redirectUri = oauthRedirectUri(request);
+  const state = await signOAuthState(env, {
+    provider,
+    returnTo: "/",
+    userEmail: user.email,
+  });
+
+  const authorizeUrl =
+    provider === "google"
+      ? googleAuthorizeUrl(env, redirectUri, state)
+      : salesforceAuthorizeUrl(env, redirectUri, state);
+
+  return Response.redirect(authorizeUrl, 302);
+}
+
+async function finishOAuth(request: Request, env?: Env): Promise<Response> {
+  const url = new URL(request.url);
+  const code = url.searchParams.get("code");
+  const state = url.searchParams.get("state");
+  const error = url.searchParams.get("error");
+
+  if (error) return redirectWithIntegrationResult(request, "error", error);
+  if (!code || !state) return redirectWithIntegrationResult(request, "error", "Missing OAuth response.");
+
+  const parsedState = await verifyOAuthState(env, state);
+  if (!parsedState) return redirectWithIntegrationResult(request, "error", "Invalid OAuth state.");
+
+  const user = authenticatedUser(request);
+  if (!user || user.email !== parsedState.userEmail) {
+    return redirectWithIntegrationResult(request, "error", "Signed-in user changed during OAuth.");
+  }
+
+  if (!env?.DB) return redirectWithIntegrationResult(request, "error", "Connection storage is not configured.");
+  if (!env.OAUTH_TOKEN_SECRET) return redirectWithIntegrationResult(request, "error", "Token encryption is not configured.");
+
+  const redirectUri = oauthRedirectUri(request);
+  const tokenResponse =
+    parsedState.provider === "google"
+      ? await exchangeGoogleCode(env, code, redirectUri)
+      : await exchangeSalesforceCode(env, code, redirectUri);
+
+  if (!tokenResponse.access_token) {
+    return redirectWithIntegrationResult(
+      request,
+      "error",
+      tokenResponse.error_description ?? tokenResponse.error ?? "OAuth token exchange failed.",
+    );
+  }
+
+  await saveConnection(env, user.email, parsedState.provider, tokenResponse);
+  return redirectWithIntegrationResult(request, parsedState.provider, "connected");
+}
+
+async function salesforceConnection(request: Request, env?: Env): Promise<SalesforceConnection | null> {
+  const user = authenticatedUser(request);
+  const storedConnection = user ? await connectionForUser(env, user.email, "salesforce") : null;
+  if (storedConnection?.instanceUrl && storedConnection.externalUserId) {
+    return {
+      accessToken: storedConnection.accessToken,
+      apiVersion: env?.SALESFORCE_API_VERSION ?? process.env.SALESFORCE_API_VERSION ?? DEFAULT_SALESFORCE_API_VERSION,
+      instanceUrl: storedConnection.instanceUrl,
+      ownerId: storedConnection.externalUserId,
+    };
+  }
+
+  return salesforceEnvConnection(env);
+}
+
+function salesforceEnvConnection(env?: Env): SalesforceConnection | null {
   const instanceUrl = (env?.SALESFORCE_INSTANCE_URL ?? process.env.SALESFORCE_INSTANCE_URL)?.replace(/\/$/, "");
   const accessToken = env?.SALESFORCE_ACCESS_TOKEN ?? process.env.SALESFORCE_ACCESS_TOKEN;
   if (!instanceUrl || !accessToken) return null;
@@ -287,19 +464,15 @@ function salesforceConnection(env?: Env) {
     accessToken,
     apiVersion: env?.SALESFORCE_API_VERSION ?? process.env.SALESFORCE_API_VERSION ?? DEFAULT_SALESFORCE_API_VERSION,
     instanceUrl,
+    ownerId: TASKRAY_TIME_OWNER_ID,
   };
 }
 
 async function salesforceFetch<T>(
-  env: Env | undefined,
+  connection: SalesforceConnection,
   path: string,
   init: RequestInit = {},
 ): Promise<{ ok: true; data: T } | { ok: false; error: Response }> {
-  const connection = salesforceConnection(env);
-  if (!connection) {
-    return { ok: false, error: jsonResponse({ error: "Salesforce connection is not configured." }, 503) };
-  }
-
   const response = await fetch(`${connection.instanceUrl}${path}`, {
     ...init,
     headers: {
@@ -324,6 +497,341 @@ async function salesforceFetch<T>(
   }
 
   return { ok: true, data: data as T };
+}
+
+async function connectionForUser(env: Env | undefined, userEmail: string, provider: Provider) {
+  const row = await connectionRow(env, userEmail, provider);
+  if (!row || !env?.OAUTH_TOKEN_SECRET) return null;
+
+  const accessToken = await decryptToken(env, row.access_token);
+  const refreshToken = row.refresh_token ? await decryptToken(env, row.refresh_token) : null;
+  if (!accessToken) return null;
+
+  const expiresSoon = row.token_expires_at ? row.token_expires_at < Date.now() + 60_000 : false;
+  if (!expiresSoon) {
+    return {
+      accessToken,
+      externalUserId: row.external_user_id,
+      instanceUrl: row.instance_url,
+      refreshToken,
+    };
+  }
+
+  if (!refreshToken) return null;
+
+  const refreshed =
+    provider === "google"
+      ? await refreshGoogleToken(env, refreshToken)
+      : await refreshSalesforceToken(env, refreshToken);
+  if (!refreshed.access_token) return null;
+
+  const savedResponse: OAuthTokenResponse = {
+    ...refreshed,
+    refresh_token: refreshed.refresh_token ?? refreshToken,
+    instance_url: refreshed.instance_url ?? row.instance_url ?? undefined,
+    id: row.external_user_id ? `/${row.external_user_id}` : refreshed.id,
+  };
+  await saveConnection(env, userEmail, provider, savedResponse);
+
+  return {
+    accessToken: refreshed.access_token,
+    externalUserId: row.external_user_id,
+    instanceUrl: refreshed.instance_url ?? row.instance_url,
+    refreshToken,
+  };
+}
+
+async function connectionRow(env: Env | undefined, userEmail: string, provider: Provider) {
+  if (!env?.DB) return null;
+  await ensureOAuthSchema(env);
+
+  return env.DB.prepare(
+    [
+      "SELECT user_email, provider, access_token, refresh_token, token_expires_at,",
+      "instance_url, external_user_id, created_at, updated_at",
+      "FROM oauth_connections",
+      "WHERE user_email = ? AND provider = ?",
+    ].join(" "),
+  )
+    .bind(userEmail, provider)
+    .first<OAuthConnectionRow>();
+}
+
+async function saveConnection(env: Env, userEmail: string, provider: Provider, tokenResponse: OAuthTokenResponse) {
+  if (!env.DB) throw new Error("Connection storage is not configured.");
+  if (!tokenResponse.access_token) throw new Error("OAuth access token missing.");
+
+  await ensureOAuthSchema(env);
+
+  const existing = await connectionRow(env, userEmail, provider);
+  const now = new Date().toISOString();
+  const refreshToken = tokenResponse.refresh_token ?? (existing?.refresh_token ? await decryptToken(env, existing.refresh_token) : null);
+  const externalUserId =
+    provider === "salesforce"
+      ? salesforceUserIdFromIdentityUrl(tokenResponse.id) ?? existing?.external_user_id ?? null
+      : existing?.external_user_id ?? null;
+  const expiresAt = tokenResponse.expires_in ? Date.now() + tokenResponse.expires_in * 1000 : Date.now() + 7_200_000;
+
+  await env.DB.prepare(
+    [
+      "INSERT INTO oauth_connections",
+      "(user_email, provider, access_token, refresh_token, token_expires_at, instance_url, external_user_id, created_at, updated_at)",
+      "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+      "ON CONFLICT(user_email, provider) DO UPDATE SET",
+      "access_token = excluded.access_token,",
+      "refresh_token = excluded.refresh_token,",
+      "token_expires_at = excluded.token_expires_at,",
+      "instance_url = excluded.instance_url,",
+      "external_user_id = excluded.external_user_id,",
+      "updated_at = excluded.updated_at",
+    ].join(" "),
+  )
+    .bind(
+      userEmail,
+      provider,
+      await encryptToken(env, tokenResponse.access_token),
+      refreshToken ? await encryptToken(env, refreshToken) : null,
+      expiresAt,
+      tokenResponse.instance_url ?? existing?.instance_url ?? null,
+      externalUserId,
+      existing?.created_at ?? now,
+      now,
+    )
+    .run();
+}
+
+async function ensureOAuthSchema(env?: Env) {
+  if (!env?.DB) return;
+
+  await env.DB.batch([
+    env.DB.prepare(
+      [
+        "CREATE TABLE IF NOT EXISTS oauth_connections (",
+        "user_email text NOT NULL,",
+        "provider text NOT NULL,",
+        "access_token text NOT NULL,",
+        "refresh_token text,",
+        "token_expires_at integer,",
+        "instance_url text,",
+        "external_user_id text,",
+        "created_at text NOT NULL,",
+        "updated_at text NOT NULL,",
+        "PRIMARY KEY(user_email, provider)",
+        ")",
+      ].join(" "),
+    ),
+  ]);
+}
+
+async function exchangeGoogleCode(env: Env | undefined, code: string, redirectUri: string) {
+  return tokenRequest("https://oauth2.googleapis.com/token", {
+    client_id: env?.GOOGLE_CLIENT_ID ?? "",
+    client_secret: env?.GOOGLE_CLIENT_SECRET ?? "",
+    code,
+    grant_type: "authorization_code",
+    redirect_uri: redirectUri,
+  });
+}
+
+async function exchangeSalesforceCode(env: Env | undefined, code: string, redirectUri: string) {
+  return tokenRequest(`${salesforceLoginUrl(env)}/services/oauth2/token`, {
+    client_id: env?.SALESFORCE_CLIENT_ID ?? "",
+    client_secret: env?.SALESFORCE_CLIENT_SECRET ?? "",
+    code,
+    grant_type: "authorization_code",
+    redirect_uri: redirectUri,
+  });
+}
+
+async function refreshGoogleToken(env: Env | undefined, refreshToken: string) {
+  return tokenRequest("https://oauth2.googleapis.com/token", {
+    client_id: env?.GOOGLE_CLIENT_ID ?? "",
+    client_secret: env?.GOOGLE_CLIENT_SECRET ?? "",
+    grant_type: "refresh_token",
+    refresh_token: refreshToken,
+  });
+}
+
+async function refreshSalesforceToken(env: Env | undefined, refreshToken: string) {
+  return tokenRequest(`${salesforceLoginUrl(env)}/services/oauth2/token`, {
+    client_id: env?.SALESFORCE_CLIENT_ID ?? "",
+    client_secret: env?.SALESFORCE_CLIENT_SECRET ?? "",
+    grant_type: "refresh_token",
+    refresh_token: refreshToken,
+  });
+}
+
+async function tokenRequest(url: string, values: Record<string, string>) {
+  const response = await fetch(url, {
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body: new URLSearchParams(values),
+  });
+
+  return response.json().catch(() => ({
+    error: response.ok ? undefined : "token_request_failed",
+  })) as Promise<OAuthTokenResponse>;
+}
+
+function googleAuthorizeUrl(env: Env | undefined, redirectUri: string, state: string) {
+  const url = new URL("https://accounts.google.com/o/oauth2/v2/auth");
+  url.searchParams.set("client_id", env?.GOOGLE_CLIENT_ID ?? "");
+  url.searchParams.set("redirect_uri", redirectUri);
+  url.searchParams.set("response_type", "code");
+  url.searchParams.set("scope", "https://www.googleapis.com/auth/calendar.readonly");
+  url.searchParams.set("access_type", "offline");
+  url.searchParams.set("prompt", "consent");
+  url.searchParams.set("state", state);
+  return url.toString();
+}
+
+function salesforceAuthorizeUrl(env: Env | undefined, redirectUri: string, state: string) {
+  const url = new URL(`${salesforceLoginUrl(env)}/services/oauth2/authorize`);
+  url.searchParams.set("client_id", env?.SALESFORCE_CLIENT_ID ?? "");
+  url.searchParams.set("redirect_uri", redirectUri);
+  url.searchParams.set("response_type", "code");
+  url.searchParams.set("scope", "api refresh_token");
+  url.searchParams.set("state", state);
+  return url.toString();
+}
+
+function oauthConfigured(env: Env | undefined, provider: Provider) {
+  const hasTokenStorage = Boolean(env?.DB && env?.OAUTH_TOKEN_SECRET);
+  if (provider === "google") return hasTokenStorage && Boolean(env?.GOOGLE_CLIENT_ID && env?.GOOGLE_CLIENT_SECRET);
+  return hasTokenStorage && Boolean(env?.SALESFORCE_CLIENT_ID && env?.SALESFORCE_CLIENT_SECRET);
+}
+
+function providerFromUrl(request: Request): Provider | null {
+  const provider = new URL(request.url).searchParams.get("provider");
+  return provider === "google" || provider === "salesforce" ? provider : null;
+}
+
+function providerLabel(provider: Provider) {
+  return provider === "google" ? "Google Calendar" : "Salesforce";
+}
+
+function salesforceLoginUrl(env?: Env) {
+  return (env?.SALESFORCE_LOGIN_URL ?? process.env.SALESFORCE_LOGIN_URL ?? DEFAULT_SALESFORCE_LOGIN_URL).replace(/\/$/, "");
+}
+
+function oauthRedirectUri(request: Request) {
+  return new URL(OAUTH_CALLBACK_PATH, request.url).toString();
+}
+
+function redirectWithIntegrationResult(request: Request, integration: string, message: string) {
+  const url = new URL("/", request.url);
+  url.searchParams.set("integration", integration);
+  url.searchParams.set("message", message);
+  return Response.redirect(url.toString(), 302);
+}
+
+function authenticatedUser(request: Request) {
+  const email = request.headers.get("oai-authenticated-user-email")?.trim().toLowerCase();
+  if (!email) return null;
+
+  const encodedName = request.headers.get("oai-authenticated-user-full-name");
+  const encoding = request.headers.get("oai-authenticated-user-full-name-encoding");
+  const name =
+    encodedName && encoding === "percent-encoded-utf-8"
+      ? decodeURIComponent(encodedName)
+      : encodedName ?? email;
+
+  return { email, name };
+}
+
+async function signOAuthState(env: Env | undefined, state: { provider: Provider; returnTo: string; userEmail: string }) {
+  const payload = base64UrlEncode(JSON.stringify({ ...state, nonce: crypto.randomUUID() }));
+  const signature = await hmacSha256(env?.OAUTH_TOKEN_SECRET ?? "", payload);
+  return `${payload}.${signature}`;
+}
+
+async function verifyOAuthState(env: Env | undefined, state: string) {
+  const [payload, signature] = state.split(".");
+  if (!payload || !signature) return null;
+
+  const expectedSignature = await hmacSha256(env?.OAUTH_TOKEN_SECRET ?? "", payload);
+  if (!timingSafeEqual(signature, expectedSignature)) return null;
+
+  const parsed = JSON.parse(base64UrlDecode(payload)) as { provider?: string; returnTo?: string; userEmail?: string };
+  if ((parsed.provider !== "google" && parsed.provider !== "salesforce") || !parsed.userEmail) return null;
+  return {
+    provider: parsed.provider as Provider,
+    returnTo: parsed.returnTo ?? "/",
+    userEmail: parsed.userEmail,
+  };
+}
+
+async function encryptToken(env: Env, token: string) {
+  const iv = crypto.getRandomValues(new Uint8Array(12));
+  const key = await tokenCryptoKey(env);
+  const encrypted = await crypto.subtle.encrypt({ name: "AES-GCM", iv }, key, new TextEncoder().encode(token));
+  return `v1:${base64UrlEncodeBytes(iv)}:${base64UrlEncodeBytes(new Uint8Array(encrypted))}`;
+}
+
+async function decryptToken(env: Env, encryptedToken: string) {
+  const [version, ivValue, cipherValue] = encryptedToken.split(":");
+  if (version !== "v1" || !ivValue || !cipherValue) return null;
+
+  try {
+    const key = await tokenCryptoKey(env);
+    const decrypted = await crypto.subtle.decrypt(
+      { name: "AES-GCM", iv: base64UrlDecodeBytes(ivValue) },
+      key,
+      base64UrlDecodeBytes(cipherValue),
+    );
+    return new TextDecoder().decode(decrypted);
+  } catch {
+    return null;
+  }
+}
+
+async function tokenCryptoKey(env: Env) {
+  if (!env.OAUTH_TOKEN_SECRET) throw new Error("Token encryption is not configured.");
+  const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(env.OAUTH_TOKEN_SECRET));
+  return crypto.subtle.importKey("raw", digest, "AES-GCM", false, ["encrypt", "decrypt"]);
+}
+
+async function hmacSha256(secret: string, value: string) {
+  const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(secret || "missing-oauth-secret"));
+  const key = await crypto.subtle.importKey("raw", digest, { name: "HMAC", hash: "SHA-256" }, false, ["sign"]);
+  const signature = await crypto.subtle.sign("HMAC", key, new TextEncoder().encode(value));
+  return base64UrlEncodeBytes(new Uint8Array(signature));
+}
+
+function salesforceUserIdFromIdentityUrl(identityUrl?: string) {
+  if (!identityUrl) return null;
+  return identityUrl.split("/").filter(Boolean).at(-1) ?? null;
+}
+
+function timingSafeEqual(left: string, right: string) {
+  if (left.length !== right.length) return false;
+  let result = 0;
+  for (let index = 0; index < left.length; index += 1) {
+    result |= left.charCodeAt(index) ^ right.charCodeAt(index);
+  }
+  return result === 0;
+}
+
+function base64UrlEncode(value: string) {
+  return base64UrlEncodeBytes(new TextEncoder().encode(value));
+}
+
+function base64UrlDecode(value: string) {
+  return new TextDecoder().decode(base64UrlDecodeBytes(value));
+}
+
+function base64UrlEncodeBytes(bytes: Uint8Array) {
+  let binary = "";
+  for (const byte of bytes) binary += String.fromCharCode(byte);
+  return btoa(binary).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/g, "");
+}
+
+function base64UrlDecodeBytes(value: string) {
+  const padded = value.replace(/-/g, "+").replace(/_/g, "/").padEnd(Math.ceil(value.length / 4) * 4, "=");
+  const binary = atob(padded);
+  const bytes = new Uint8Array(binary.length);
+  for (let index = 0; index < binary.length; index += 1) bytes[index] = binary.charCodeAt(index);
+  return bytes;
 }
 
 function safeDate(value: string | null) {
