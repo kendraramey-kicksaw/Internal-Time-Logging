@@ -151,6 +151,14 @@ label {
   font-weight: 700;
 }
 
+.sync-status.live {
+  color: var(--accent-strong);
+}
+
+.sync-status.failed {
+  color: var(--danger);
+}
+
 .action-status {
   max-width: 260px;
   text-align: right;
@@ -348,6 +356,15 @@ td {
 .suggested-table td,
 .manual-table td {
   vertical-align: middle;
+}
+
+.suggested-table th:nth-child(4),
+.manual-table th:nth-child(4) {
+  text-align: center;
+}
+
+.suggested-table th:nth-child(4) .sort-button {
+  justify-content: center;
 }
 
 tbody tr:nth-child(even) td {

@@ -79,7 +79,7 @@ type SalesforceColumnKey =
 const monthStart = "2026-07-01";
 const monthEnd = "2026-07-31";
 const defaultSuggestionStart = "2026-07-11";
-const defaultSuggestionEnd = "2026-07-23";
+const defaultSuggestionEnd = todayIso();
 const ownerId = "0054T000001in8HQAQ";
 const salesforceBaseUrl = "https://kicksaw.my.salesforce.com";
 const initialSalesforceColumnWidths: Record<SalesforceColumnKey, number> = {
@@ -764,6 +764,17 @@ function blankEntry(): TimeEntry {
   };
 }
 
+function entryIsComplete(entry: Pick<TimeEntry, "activityType" | "date" | "hours" | "notes" | "projectLabel" | "projectValue">) {
+  return Boolean(
+    entry.date &&
+      entry.projectLabel.trim() &&
+      entry.projectValue &&
+      entry.hours > 0 &&
+      entry.activityType.trim() &&
+      entry.notes.trim(),
+  );
+}
+
 function sortSuggested(a: TimeEntry, b: TimeEntry) {
   return (
     a.date.localeCompare(b.date) ||
@@ -774,6 +785,30 @@ function sortSuggested(a: TimeEntry, b: TimeEntry) {
 
 function inRange(entry: { date: string }, startDate: string, endDate: string) {
   return entry.date >= startDate && entry.date <= endDate;
+}
+
+function todayIso() {
+  return new Intl.DateTimeFormat("en-CA", {
+    day: "2-digit",
+    month: "2-digit",
+    timeZone: "America/Toronto",
+    year: "numeric",
+  }).format(new Date());
+}
+
+function addDaysIso(date: string, days: number) {
+  const nextDate = new Date(`${date}T00:00:00Z`);
+  nextDate.setUTCDate(nextDate.getUTCDate() + days);
+  return nextDate.toISOString().slice(0, 10);
+}
+
+function latestSalesforceDate(entries: Pick<SalesforceTimeEntry, "date">[]) {
+  return entries.reduce((latest, entry) => (entry.date > latest ? entry.date : latest), "");
+}
+
+function defaultSuggestionStartFor(entries: Pick<SalesforceTimeEntry, "date">[]) {
+  const latestDate = latestSalesforceDate(entries);
+  return latestDate ? addDaysIso(latestDate, 1) : monthStart;
 }
 
 function formatHours(hours: number) {
@@ -969,17 +1004,20 @@ function ProjectLookup({
   label,
   value,
   onChange,
+  required = false,
   showLabel = true,
 }: {
   label: string;
   value: string;
   onChange: (selectedProject: Project) => void;
+  required?: boolean;
   showLabel?: boolean;
 }) {
   const input = (
     <input
       aria-label={label}
       list="project-options"
+      required={required}
       value={value}
       onChange={(event) => {
         const nextLabel = event.target.value;
@@ -1008,7 +1046,7 @@ function ProjectLookup({
 }
 
 export default function Home() {
-  const [suggestionStart, setSuggestionStart] = useState(defaultSuggestionStart);
+  const [suggestionStart, setSuggestionStart] = useState(() => defaultSuggestionStartFor(salesforceRows));
   const [suggestionEnd, setSuggestionEnd] = useState(defaultSuggestionEnd);
   const [salesforceStart, setSalesforceStart] = useState(monthStart);
   const [salesforceEnd, setSalesforceEnd] = useState(monthEnd);
@@ -1020,6 +1058,7 @@ export default function Home() {
   const [salesforceSyncStatus, setSalesforceSyncStatus] = useState("Salesforce snapshot loaded");
   const [importStatus, setImportStatus] = useState("");
   const [isImporting, setIsImporting] = useState(false);
+  const [suggestionStartWasEdited, setSuggestionStartWasEdited] = useState(false);
   const [suggestionSort, setSuggestionSort] = useState<SortConfig<SuggestedSortKey>>({
     key: "date",
     direction: "asc",
@@ -1052,10 +1091,7 @@ export default function Home() {
     const suggestedHours = filteredSuggestions.reduce((sum, entry) => sum + entry.hours, 0);
     const salesforceHours = filteredSalesforceRows.reduce((sum, entry) => sum + entry.hours, 0);
     const rowsToReview = filteredSuggestions.length;
-    const lastSalesforceDate = liveSalesforceRows.reduce(
-      (latest, entry) => (entry.date > latest ? entry.date : latest),
-      "",
-    );
+    const lastSalesforceDate = latestSalesforceDate(liveSalesforceRows);
 
     return { suggestedHours, salesforceHours, rowsToReview, lastSalesforceDate };
   }, [filteredSalesforceRows, filteredSuggestions, liveSalesforceRows]);
@@ -1065,6 +1101,11 @@ export default function Home() {
     loadSalesforceRows(controller.signal);
     return () => controller.abort();
   }, [salesforceEnd, salesforceStart]);
+
+  useEffect(() => {
+    if (suggestionStartWasEdited) return;
+    setSuggestionStart(defaultSuggestionStartFor(liveSalesforceRows));
+  }, [liveSalesforceRows, suggestionStartWasEdited]);
 
   function updateSuggestion(id: string, updates: Partial<TimeEntry>) {
     setSuggestions((current) =>
@@ -1081,6 +1122,11 @@ export default function Home() {
   }
 
   function addManualEntry() {
+    if (!entryIsComplete(manualDraft)) {
+      setImportStatus("Manual entry needs Date, Project, Hours, Activity Type, and Notes.");
+      return;
+    }
+
     setSuggestions((current) =>
       [
         ...current,
@@ -1119,6 +1165,14 @@ export default function Home() {
     }
   }
 
+  function salesforceStatusClass() {
+    if (salesforceSyncStatus === "Salesforce live") return "sync-status live";
+    if (salesforceSyncStatus === "Refreshing Salesforce..." || salesforceSyncStatus === "Salesforce snapshot loaded") {
+      return "sync-status";
+    }
+    return "sync-status failed";
+  }
+
   function startSalesforceColumnResize(key: SalesforceColumnKey, clientX: number) {
     const startingWidth = salesforceColumnWidths[key];
 
@@ -1142,6 +1196,12 @@ export default function Home() {
   }
 
   async function importToSalesforce() {
+    const incompleteRow = filteredSuggestions.find((entry) => !entryIsComplete(entry));
+    if (incompleteRow) {
+      setImportStatus("Suggested entries need Date, Project, Hours, Activity Type, and Notes before import.");
+      return;
+    }
+
     const payload = toSalesforcePayload(filteredSuggestions);
     if (!payload.length) {
       setImportStatus("No suggested rows to import.");
@@ -1240,14 +1300,19 @@ export default function Home() {
               Start
               <input
                 type="date"
+                required
                 value={suggestionStart}
-                onChange={(event) => setSuggestionStart(event.target.value)}
+                onChange={(event) => {
+                  setSuggestionStartWasEdited(true);
+                  setSuggestionStart(event.target.value);
+                }}
               />
             </label>
             <label>
               End
               <input
                 type="date"
+                required
                 value={suggestionEnd}
                 onChange={(event) => setSuggestionEnd(event.target.value)}
               />
@@ -1267,7 +1332,7 @@ export default function Home() {
                 <SortHeader label="Billable" sortKey="billable" sortConfig={suggestionSort} onSort={(key) => setSuggestionSort((current) => nextSort(current, key))} />
                 <SortHeader label="Activity Type" sortKey="activityType" sortConfig={suggestionSort} onSort={(key) => setSuggestionSort((current) => nextSort(current, key))} />
                 <SortHeader label="Notes" sortKey="notes" sortConfig={suggestionSort} onSort={(key) => setSuggestionSort((current) => nextSort(current, key))} />
-                <th>Remove</th>
+                <th>Actions</th>
               </tr>
             </thead>
             <tbody>
@@ -1277,6 +1342,7 @@ export default function Home() {
                     <td>
                       <input
                         type="date"
+                        required
                         value={entry.date}
                         onChange={(event) => updateSuggestion(entry.id, { date: event.target.value })}
                       />
@@ -1285,6 +1351,7 @@ export default function Home() {
                       <ProjectLookup
                         label="Project"
                         value={entry.projectLabel}
+                        required
                         showLabel={false}
                         onChange={(selected) =>
                           updateSuggestion(entry.id, {
@@ -1300,6 +1367,7 @@ export default function Home() {
                         className="hours"
                         type="number"
                         min="0"
+                        required
                         step="0.25"
                         value={entry.hours}
                         onChange={(event) =>
@@ -1320,6 +1388,7 @@ export default function Home() {
                     </td>
                     <td>
                       <select
+                        required
                         value={entry.activityType}
                         onChange={(event) =>
                           updateSuggestion(entry.id, { activityType: event.target.value })
@@ -1334,6 +1403,7 @@ export default function Home() {
                     </td>
                     <td>
                       <textarea
+                        required
                         value={entry.notes}
                         onChange={(event) => updateSuggestion(entry.id, { notes: event.target.value })}
                       />
@@ -1371,7 +1441,7 @@ export default function Home() {
                 <th>Billable</th>
                 <th>Activity Type</th>
                 <th>Notes</th>
-                <th>Add</th>
+                <th>Actions</th>
               </tr>
             </thead>
             <tbody>
@@ -1380,6 +1450,7 @@ export default function Home() {
                   <input
                     aria-label="Manual entry date"
                     type="date"
+                    required
                     value={manualDraft.date}
                     onChange={(event) => setManualDraft({ ...manualDraft, date: event.target.value })}
                   />
@@ -1388,6 +1459,7 @@ export default function Home() {
                   <ProjectLookup
                     label="Manual entry project"
                     value={manualDraft.projectLabel}
+                    required
                     showLabel={false}
                     onChange={(selectedProject) =>
                       setManualDraft({
@@ -1404,6 +1476,7 @@ export default function Home() {
                     aria-label="Manual entry hours"
                     type="number"
                     min="0"
+                    required
                     step="0.25"
                     value={manualDraft.hours || ""}
                     onChange={(event) =>
@@ -1425,6 +1498,7 @@ export default function Home() {
                 <td>
                   <select
                     aria-label="Manual entry activity type"
+                    required
                     value={manualDraft.activityType}
                     onChange={(event) =>
                       setManualDraft({ ...manualDraft, activityType: event.target.value })
@@ -1440,6 +1514,7 @@ export default function Home() {
                 <td>
                   <textarea
                     aria-label="Manual entry notes"
+                    required
                     value={manualDraft.notes}
                     onChange={(event) => setManualDraft({ ...manualDraft, notes: event.target.value })}
                     placeholder="Describe the work for Salesforce notes"
@@ -1461,7 +1536,7 @@ export default function Home() {
           <div>
             <h2>Salesforce TaskRay Time</h2>
           </div>
-          <p className="sync-status">{salesforceSyncStatus}</p>
+          <p className={salesforceStatusClass()}>{salesforceSyncStatus}</p>
           <div className="date-filters">
             <label>
               Start
