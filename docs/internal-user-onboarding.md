@@ -23,22 +23,23 @@ repository invitation email.
    https://github.com/kendraramey-kicksaw/Internal-Time-Logging
    ```
 
-5. Clone the repo locally, or have Codex clone/open it for you:
-
-   ```bash
-   git clone https://github.com/kendraramey-kicksaw/Internal-Time-Logging.git
-   cd Internal-Time-Logging
-   ```
-
-6. Open the cloned folder in Codex.
+5. Open Codex and paste the setup prompt below. The prompt includes the clone
+   command, so Codex can clone/open the repo if you have not already done that.
 
 ## One Prompt Setup
 
-After the repo is open in Codex, paste this prompt:
+After accepting the GitHub repo invite, paste this prompt into Codex:
 
 ```text
 Set up the Internal Time Logging app for my user from start to finish.
 
+If the repo is not already cloned locally, clone it from:
+https://github.com/kendraramey-kicksaw/Internal-Time-Logging.git
+
+Use this command if you need to clone it:
+git clone https://github.com/kendraramey-kicksaw/Internal-Time-Logging.git
+
+After cloning, open or switch into the Internal-Time-Logging project folder before running setup commands.
 Use the repo README and docs/local-cli-setup.md as the source of truth.
 If Node.js 22.13.0 or newer is not available, tell me exactly what to install.
 If Salesforce CLI is not available, install it or give me the exact command to install it.
