@@ -759,6 +759,7 @@ function suggested(
     date,
     projectValue: selectedProject.idPricingStructure,
     projectLabel: selectedProject.label,
+    projectWebsiteDomain: selectedProject.websiteDomain,
     hours,
     billable: effectiveBillable,
     activityType: activityTypeForProject(selectedProject.label, activityType),
@@ -778,12 +779,33 @@ function sameAccountWebsiteDomain(left?: string, right?: string) {
   return Boolean(leftDomain && rightDomain && leftDomain === rightDomain);
 }
 
+function projectAccountKey(label?: string) {
+  return String(label ?? "")
+    .split(/\s+-\s+|:|\[/)[0]
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, " ");
+}
+
+function sameProjectAccount(leftLabel?: string, rightLabel?: string) {
+  const leftAccount = projectAccountKey(leftLabel);
+  const rightAccount = projectAccountKey(rightLabel);
+  return Boolean(leftAccount && rightAccount && leftAccount === rightAccount);
+}
+
+function sameProjectDomainOrAccount(leftProject: Project, rightProject: Project) {
+  return (
+    sameAccountWebsiteDomain(leftProject.websiteDomain, rightProject.websiteDomain) ||
+    sameProjectAccount(leftProject.label, rightProject.label)
+  );
+}
+
 function shouldDefaultCalendarProject(event: CalendarEvent, defaultProject: Project) {
   if (!defaultProject.idPricingStructure) return false;
   if (event.activityType === "People and Team Activities") return false;
   if (event.project.id === INTERNAL_PROJECT.id || event.project.label.includes("Kicksaw")) return false;
   if (!event.project.idPricingStructure && !event.project.label.trim()) return true;
-  return sameAccountWebsiteDomain(event.project.websiteDomain, defaultProject.websiteDomain);
+  return sameProjectDomainOrAccount(event.project, defaultProject);
 }
 
 function applyDefaultProjectToCalendarEvents(events: CalendarEvent[], defaultProject: Project) {
@@ -1259,7 +1281,9 @@ function shouldUseDefaultProject(entry: TimeEntry) {
 
 function applyDefaultProjectToEntry(entry: TimeEntry, defaultProject: Project) {
   const projectIsBlank = !entry.projectValue && !entry.projectLabel.trim();
-  const shouldOverrideSameAccount = sameAccountWebsiteDomain(entry.projectWebsiteDomain, defaultProject.websiteDomain);
+  const shouldOverrideSameAccount =
+    sameAccountWebsiteDomain(entry.projectWebsiteDomain, defaultProject.websiteDomain) ||
+    sameProjectAccount(entry.projectLabel, defaultProject.label);
   if (!defaultProject.idPricingStructure || !shouldUseDefaultProject(entry) || (!projectIsBlank && !shouldOverrideSameAccount)) {
     return entry;
   }
