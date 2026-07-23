@@ -59,10 +59,11 @@ test("server-renders the calendar time-entry workspace", async () => {
 });
 
 test("keeps the starter preview out of the production screen", async () => {
-  const [page, layout, worker] = await Promise.all([
+  const [page, layout, worker, proxy] = await Promise.all([
     readFile(new URL("../app/page.tsx", import.meta.url), "utf8"),
     readFile(new URL("../app/layout.tsx", import.meta.url), "utf8"),
     readFile(new URL("../worker/index.ts", import.meta.url), "utf8"),
+    readFile(new URL("../scripts/local-proxy.mjs", import.meta.url), "utf8"),
   ]);
 
   assert.doesNotMatch(page, /SkeletonPreview|codex-preview|react-loading-skeleton/);
@@ -73,7 +74,11 @@ test("keeps the starter preview out of the production screen", async () => {
   assert.match(page, /\/api\/calendar\/events/);
   assert.match(page, /suggestedStatus/);
   assert.match(page, /manualStatus/);
+  assert.match(page, /apiUrl/);
+  assert.match(page, /127\.0\.0\.1:8789/);
   assert.match(worker, /oauth_connections/);
   assert.match(worker, /\/api\/oauth\/start/);
   assert.match(worker, /GOOGLE_CALENDAR_ACCESS_TOKEN/);
+  assert.match(proxy, /sf/);
+  assert.match(proxy, /TASKRAY__Owner__c/);
 });

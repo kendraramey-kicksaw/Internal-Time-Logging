@@ -103,6 +103,7 @@ const defaultSuggestionStart = "2026-07-11";
 const defaultSuggestionEnd = todayIso();
 const ownerId = "0054T000001in8HQAQ";
 const salesforceBaseUrl = "https://kicksaw.my.salesforce.com";
+const localProxyBaseUrl = "http://127.0.0.1:8789";
 const initialSalesforceColumnWidths: Record<SalesforceColumnKey, number> = {
   date: 112,
   recordName: 96,
@@ -943,6 +944,17 @@ function recordUrl(recordId: string) {
   return `${salesforceBaseUrl}/lightning/r/TASKRAY__trTaskTime__c/${recordId}/view`;
 }
 
+function apiUrl(path: string) {
+  if (
+    typeof window !== "undefined" &&
+    (window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1")
+  ) {
+    return `${localProxyBaseUrl}${path}`;
+  }
+
+  return path;
+}
+
 function compareValues(left: string | number | boolean, right: string | number | boolean) {
   if (typeof left === "number" && typeof right === "number") return left - right;
   if (typeof left === "boolean" && typeof right === "boolean") return Number(left) - Number(right);
@@ -1234,7 +1246,7 @@ export default function Home() {
 
     try {
       const response = await fetch(
-        `/api/calendar/events?start=${suggestionStart}&end=${suggestionEnd}`,
+        apiUrl(`/api/calendar/events?start=${suggestionStart}&end=${suggestionEnd}`),
       );
       const body = await response.json();
 
@@ -1254,7 +1266,7 @@ export default function Home() {
 
   async function loadIntegrationStatus() {
     try {
-      const response = await fetch("/api/integrations/status");
+      const response = await fetch(apiUrl("/api/integrations/status"));
       const body = await response.json();
       if (!response.ok) throw new Error(body.error ?? "Integration status failed.");
 
@@ -1272,7 +1284,7 @@ export default function Home() {
   async function disconnectProvider(provider: "google" | "salesforce") {
     setIntegrationMessage(`Disconnecting ${provider}...`);
     try {
-      const response = await fetch(`/api/integrations/disconnect?provider=${provider}`, { method: "POST" });
+      const response = await fetch(apiUrl(`/api/integrations/disconnect?provider=${provider}`), { method: "POST" });
       const body = await response.json();
       if (!response.ok) throw new Error(body.error ?? "Disconnect failed.");
 
@@ -1287,7 +1299,7 @@ export default function Home() {
     setSalesforceSyncStatus("Refreshing Salesforce...");
     try {
       const response = await fetch(
-        `/api/salesforce/time-entries?start=${salesforceStart}&end=${salesforceEnd}`,
+        apiUrl(`/api/salesforce/time-entries?start=${salesforceStart}&end=${salesforceEnd}`),
         { signal },
       );
       const body = await response.json();
@@ -1375,7 +1387,7 @@ export default function Home() {
     setIsImporting(true);
     setImportStatus("Importing to Salesforce...");
     try {
-      const response = await fetch("/api/salesforce/time-entries", {
+      const response = await fetch(apiUrl("/api/salesforce/time-entries"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),

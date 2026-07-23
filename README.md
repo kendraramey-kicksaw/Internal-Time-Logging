@@ -16,6 +16,12 @@ npm run dev
 npm run build
 ```
 
+## Local CLI Mode
+
+For phase-1 personal use without org-wide OAuth apps, run the app locally with
+Salesforce CLI as the authenticated user. See
+[docs/local-cli-setup.md](docs/local-cli-setup.md).
+
 This starter does not use `wrangler.jsonc`.
 
 ## Included Shape

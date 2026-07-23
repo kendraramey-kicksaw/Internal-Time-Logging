@@ -257,6 +257,12 @@ async function createSalesforceTimeEntries(request: Request, env?: Env): Promise
     return jsonResponse({ error: "At least one time entry is required." }, 400);
   }
 
+  const ownedRecords = records.map((record) =>
+    record && typeof record === "object"
+      ? { ...record, TASKRAY__Owner__c: connection.ownerId }
+      : record,
+  );
+
   const response = await salesforceFetch<SalesforceCompositeResult>(
     connection,
     `/services/data/${connection.apiVersion}/composite/sobjects`,
@@ -264,7 +270,7 @@ async function createSalesforceTimeEntries(request: Request, env?: Env): Promise
       method: "POST",
       body: JSON.stringify({
         allOrNone: true,
-        records,
+        records: ownedRecords,
       }),
     },
   );
