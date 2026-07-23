@@ -259,6 +259,10 @@ h2 {
   padding: 12px;
 }
 
+.preference-card {
+  align-items: end;
+}
+
 .integration-card span {
   display: block;
   margin-bottom: 5px;
@@ -283,6 +287,19 @@ h2 {
 
 .integration-state.missing {
   color: var(--danger);
+}
+
+.card-note {
+  max-width: 320px;
+  margin: 6px 0 0;
+  color: var(--muted);
+  font-size: 0.78rem;
+  font-weight: 700;
+  line-height: 1.35;
+}
+
+.compact-label {
+  width: min(180px, 100%);
 }
 
 .integration-actions {

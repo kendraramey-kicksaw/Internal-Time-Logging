@@ -5,6 +5,7 @@ import { useEffect, useMemo, useState } from "react";
 type PricingStructure = "Capacity" | "T&M" | "Hybrid" | "Internal";
 type RecordTypeDeveloperName = "Client_Work" | "Internal_Project" | "Internal_Work";
 type SuggestionSource = "Calendar" | "Manual";
+type DeliveryTeam = "AOD" | "SOPS" | "COPS" | "MOPS" | "Engineering";
 
 type Project = {
   id: string;
@@ -12,6 +13,7 @@ type Project = {
   idPricingStructure: string;
   pricingStructure: PricingStructure;
   taskId?: string;
+  deliveryTeam?: string;
 };
 
 type TimeEntry = {
@@ -24,6 +26,7 @@ type TimeEntry = {
   activityType: string;
   notes: string;
   source: SuggestionSource;
+  taskId?: string;
 };
 
 type SalesforceTimeEntry = Omit<TimeEntry, "source"> & {
@@ -39,6 +42,20 @@ type SalesforceTimeEntryResponse = {
 
 type CalendarEventResponse = {
   records: CalendarEvent[];
+};
+
+type ProjectResponse = {
+  records: Project[];
+};
+
+type AppUpdateStatus = {
+  local: boolean;
+  gitAvailable?: boolean;
+  updateAvailable: boolean;
+  dirty: boolean;
+  current?: string;
+  latest?: string;
+  message?: string;
 };
 
 type ProviderConnectionStatus = {
@@ -104,6 +121,8 @@ const defaultSuggestionEnd = todayIso();
 const ownerId = "0054T000001in8HQAQ";
 const salesforceBaseUrl = "https://kicksaw.my.salesforce.com";
 const localProxyBaseUrl = "http://127.0.0.1:8789";
+const deliveryTeams: DeliveryTeam[] = ["AOD", "SOPS", "COPS", "MOPS", "Engineering"];
+const defaultDeliveryTeam: DeliveryTeam = "SOPS";
 const initialSalesforceColumnWidths: Record<SalesforceColumnKey, number> = {
   date: 112,
   recordName: 96,
@@ -730,6 +749,7 @@ function suggested(
     activityType,
     notes,
     source: "Calendar",
+    taskId: selectedProject.taskId,
   };
 }
 
@@ -789,8 +809,8 @@ function blankEntry(): TimeEntry {
   return {
     id: "manual-draft",
     date: defaultSuggestionEnd,
-    projectValue: CRISIS_PROJECT.idPricingStructure,
-    projectLabel: CRISIS_PROJECT.label,
+    projectValue: "",
+    projectLabel: "",
     hours: 0,
     billable: true,
     activityType: "Meeting",
@@ -799,11 +819,12 @@ function blankEntry(): TimeEntry {
   };
 }
 
-function entryIsComplete(entry: Pick<TimeEntry, "activityType" | "date" | "hours" | "notes" | "projectLabel" | "projectValue">) {
+function entryIsComplete(entry: Pick<TimeEntry, "activityType" | "date" | "hours" | "notes" | "projectLabel" | "projectValue" | "taskId">) {
   return Boolean(
     entry.date &&
       entry.projectLabel.trim() &&
       entry.projectValue &&
+      taskIdForEntry(entry) &&
       entry.hours > 0 &&
       entry.activityType.trim() &&
       entry.notes.trim(),
@@ -860,14 +881,14 @@ function formatHours(hours: number) {
   }).format(hours);
 }
 
-function projectForLabel(label: string) {
-  return projectOptions.find((candidate) => candidate.label === label);
+function projectForLabel(label: string, options = projectOptions) {
+  return options.find((candidate) => candidate.label === label);
 }
 
-function projectForEntry(entry: Pick<TimeEntry, "projectValue" | "projectLabel">) {
+function projectForEntry(entry: Pick<TimeEntry, "projectValue" | "projectLabel">, options = projectOptions) {
   return (
-    projectOptions.find((candidate) => candidate.idPricingStructure === entry.projectValue) ??
-    projectForLabel(entry.projectLabel)
+    options.find((candidate) => candidate.idPricingStructure === entry.projectValue) ??
+    projectForLabel(entry.projectLabel, options)
   );
 }
 
@@ -882,8 +903,8 @@ function projectIdFromValue(projectValue: string) {
   return projectValue.slice(0, 18);
 }
 
-function taskIdForEntry(entry: Pick<TimeEntry, "projectValue" | "projectLabel">) {
-  return projectForEntry(entry)?.taskId ?? PROJECT_TASK_IDS[projectIdFromValue(entry.projectValue)];
+function taskIdForEntry(entry: Pick<TimeEntry, "projectValue" | "projectLabel" | "taskId">) {
+  return entry.taskId ?? projectForEntry(entry)?.taskId ?? PROJECT_TASK_IDS[projectIdFromValue(entry.projectValue)];
 }
 
 function recordTypeForEntry(entry: Pick<TimeEntry, "projectLabel">): RecordTypeDeveloperName {
@@ -1069,12 +1090,14 @@ function ResizableSortHeader<Key extends SalesforceSortKey>({
 function ProjectLookup({
   label,
   value,
+  options,
   onChange,
   required = false,
   showLabel = true,
 }: {
   label: string;
   value: string;
+  options: Project[];
   onChange: (selectedProject: Project) => void;
   required?: boolean;
   showLabel?: boolean;
@@ -1087,7 +1110,7 @@ function ProjectLookup({
       value={value}
       onChange={(event) => {
         const nextLabel = event.target.value;
-        const selectedProject = projectForLabel(nextLabel);
+        const selectedProject = projectForLabel(nextLabel, options);
         onChange(
           selectedProject ?? {
             id: "",
@@ -1111,7 +1134,26 @@ function ProjectLookup({
   );
 }
 
+function storedDeliveryTeam(): DeliveryTeam {
+  if (typeof window === "undefined") return defaultDeliveryTeam;
+  const stored = window.localStorage.getItem("timeLogging.deliveryTeam");
+  return deliveryTeams.includes(stored as DeliveryTeam) ? (stored as DeliveryTeam) : defaultDeliveryTeam;
+}
+
+function mergeProjectOptions(...projectLists: Project[][]) {
+  const grouped = new Map<string, Project>();
+  for (const projectList of projectLists) {
+    for (const project of projectList) {
+      const key = project.idPricingStructure || project.label;
+      if (key) grouped.set(key, project);
+    }
+  }
+  return Array.from(grouped.values()).sort((a, b) => a.label.localeCompare(b.label));
+}
+
 export default function Home() {
+  const [deliveryTeam, setDeliveryTeam] = useState<DeliveryTeam>(storedDeliveryTeam);
+  const [availableProjects, setAvailableProjects] = useState(projectOptions);
   const [suggestionStart, setSuggestionStart] = useState(() => defaultSuggestionStartFor(salesforceRows));
   const [suggestionEnd, setSuggestionEnd] = useState(defaultSuggestionEnd);
   const [salesforceStart, setSalesforceStart] = useState(monthStart);
@@ -1128,8 +1170,11 @@ export default function Home() {
   const [manualStatus, setManualStatus] = useState("");
   const [integrationStatus, setIntegrationStatus] = useState<IntegrationStatusResponse | null>(null);
   const [integrationMessage, setIntegrationMessage] = useState("Checking integrations...");
+  const [appUpdateStatus, setAppUpdateStatus] = useState<AppUpdateStatus | null>(null);
+  const [appUpdateMessage, setAppUpdateMessage] = useState("Checking app updates...");
   const [isImporting, setIsImporting] = useState(false);
   const [isRefreshingCalendar, setIsRefreshingCalendar] = useState(false);
+  const [isUpdatingApp, setIsUpdatingApp] = useState(false);
   const [suggestionStartWasEdited, setSuggestionStartWasEdited] = useState(false);
   const [liveSalesforceDefaultApplied, setLiveSalesforceDefaultApplied] = useState(false);
   const [suggestionSort, setSuggestionSort] = useState<SortConfig<SuggestedSortKey>>({
@@ -1141,6 +1186,23 @@ export default function Home() {
     direction: "desc",
   });
   const [salesforceColumnWidths, setSalesforceColumnWidths] = useState(initialSalesforceColumnWidths);
+
+  const projectLookupOptions = useMemo(
+    () =>
+      mergeProjectOptions(
+        availableProjects,
+        suggestions
+          .map((entry) => ({
+            id: projectIdFromValue(entry.projectValue),
+            label: entry.projectLabel,
+            idPricingStructure: entry.projectValue,
+            pricingStructure: pricingStructureForEntry(entry),
+            taskId: entry.taskId,
+          }))
+          .filter((project) => project.label),
+      ),
+    [availableProjects, suggestions],
+  );
 
   const filteredSuggestions = useMemo(
     () =>
@@ -1194,6 +1256,7 @@ export default function Home() {
 
   useEffect(() => {
     loadIntegrationStatus();
+    loadAppUpdateStatus();
     const url = new URL(window.location.href);
     const message = url.searchParams.get("message");
     const integration = url.searchParams.get("integration");
@@ -1202,6 +1265,11 @@ export default function Home() {
       window.history.replaceState({}, "", url.pathname);
     }
   }, []);
+
+  useEffect(() => {
+    window.localStorage.setItem("timeLogging.deliveryTeam", deliveryTeam);
+    loadProjectOptions();
+  }, [deliveryTeam]);
 
   function updateSuggestion(id: string, updates: Partial<TimeEntry>) {
     setSuggestions((current) =>
@@ -1219,7 +1287,7 @@ export default function Home() {
 
   function addManualEntry() {
     if (!entryIsComplete(manualDraft)) {
-      setManualStatus("Manual entry needs Date, Project, Hours, Activity Type, and Notes.");
+      setManualStatus("Manual entry needs Date, Project, TaskRay Task, Hours, Activity Type, and Notes.");
       return;
     }
 
@@ -1246,7 +1314,7 @@ export default function Home() {
 
     try {
       const response = await fetch(
-        apiUrl(`/api/calendar/events?start=${suggestionStart}&end=${suggestionEnd}`),
+        apiUrl(`/api/calendar/events?start=${suggestionStart}&end=${suggestionEnd}&deliveryTeam=${deliveryTeam}`),
       );
       const body = await response.json();
 
@@ -1274,6 +1342,61 @@ export default function Home() {
       setIntegrationMessage("Integration status loaded.");
     } catch (error) {
       setIntegrationMessage(error instanceof Error ? error.message : "Integration status failed.");
+    }
+  }
+
+  async function loadAppUpdateStatus() {
+    try {
+      const response = await fetch(apiUrl("/api/app/update-status"));
+      const body = await response.json();
+      if (!response.ok) throw new Error(body.error ?? "Update check failed.");
+
+      const status = body as AppUpdateStatus;
+      setAppUpdateStatus(status);
+      setAppUpdateMessage(
+        status.updateAvailable
+          ? "Update available"
+          : status.message ?? (status.local ? "App is up to date" : "Hosted deployment controls updates"),
+      );
+    } catch (error) {
+      setAppUpdateMessage(error instanceof Error ? error.message : "Update check failed.");
+    }
+  }
+
+  async function updateApp() {
+    setIsUpdatingApp(true);
+    setAppUpdateMessage("Installing update...");
+    try {
+      const response = await fetch(apiUrl("/api/app/update"), { method: "POST" });
+      const body = await response.json();
+      if (!response.ok) throw new Error(body.error ?? "Update failed.");
+
+      setAppUpdateStatus(body as AppUpdateStatus);
+      setAppUpdateMessage(body.message ?? "Update installed.");
+    } catch (error) {
+      setAppUpdateMessage(error instanceof Error ? error.message : "Update failed.");
+    } finally {
+      setIsUpdatingApp(false);
+    }
+  }
+
+  async function loadProjectOptions() {
+    try {
+      const response = await fetch(apiUrl(`/api/salesforce/projects?deliveryTeam=${deliveryTeam}`));
+      const body = await response.json();
+      if (!response.ok) throw new Error(body.error ?? "Project refresh failed.");
+
+      setAvailableProjects((body as ProjectResponse).records);
+    } catch {
+      setAvailableProjects(
+        projectOptions.filter(
+          (project) =>
+            project.id === INTERNAL_PROJECT.id ||
+            project.label.includes(`(${deliveryTeam})`) ||
+            project.label.includes(`[${deliveryTeam}]`) ||
+            (deliveryTeam === "Engineering" && project.label.includes("(ENG)")),
+        ),
+      );
     }
   }
 
@@ -1372,7 +1495,7 @@ export default function Home() {
   async function importToSalesforce() {
     const incompleteRow = filteredSuggestions.find((entry) => !entryIsComplete(entry));
     if (incompleteRow) {
-      setSuggestedStatus("Suggested entries need Date, Project, Hours, Activity Type, and Notes before import.");
+      setSuggestedStatus("Suggested entries need Date, Project, TaskRay Task, Hours, Activity Type, and Notes before import.");
       return;
     }
 
@@ -1408,7 +1531,7 @@ export default function Home() {
   return (
     <main className="shell">
       <datalist id="project-options">
-        {projectOptions.map((candidate) => (
+        {projectLookupOptions.map((candidate) => (
           <option key={candidate.idPricingStructure} value={candidate.label} />
         ))}
       </datalist>
@@ -1443,6 +1566,25 @@ export default function Home() {
           </button>
         </div>
         <div className="integration-grid">
+          <div className="integration-card preference-card">
+            <div>
+              <span>Delivery Team</span>
+              <strong>{deliveryTeam}</strong>
+            </div>
+            <label className="compact-label">
+              Team
+              <select
+                value={deliveryTeam}
+                onChange={(event) => setDeliveryTeam(event.target.value as DeliveryTeam)}
+              >
+                {deliveryTeams.map((team) => (
+                  <option key={team} value={team}>
+                    {team}
+                  </option>
+                ))}
+              </select>
+            </label>
+          </div>
           <div className="integration-card">
             <div>
               <span>Google Calendar</span>
@@ -1500,6 +1642,28 @@ export default function Home() {
                 onClick={() => disconnectProvider("salesforce")}
               >
                 Disconnect
+              </button>
+            </div>
+          </div>
+          <div className="integration-card">
+            <div>
+              <span>App Updates</span>
+              <strong className={appUpdateStatus?.updateAvailable ? "integration-state ready" : "integration-state connected"}>
+                {appUpdateStatus?.updateAvailable ? "Update available" : "Current"}
+              </strong>
+              <p className="card-note">{appUpdateMessage}</p>
+            </div>
+            <div className="integration-actions">
+              <button type="button" onClick={loadAppUpdateStatus}>
+                Check
+              </button>
+              <button
+                type="button"
+                className="primary"
+                disabled={!appUpdateStatus?.local || !appUpdateStatus.updateAvailable || appUpdateStatus.dirty || isUpdatingApp}
+                onClick={updateApp}
+              >
+                {isUpdatingApp ? "Updating..." : "Update"}
               </button>
             </div>
           </div>
@@ -1633,6 +1797,7 @@ export default function Home() {
                       <ProjectLookup
                         label="Project"
                         value={entry.projectLabel}
+                        options={projectLookupOptions}
                         required
                         showLabel={false}
                         onChange={(selected) =>
@@ -1640,6 +1805,7 @@ export default function Home() {
                             projectValue: selected.idPricingStructure,
                             projectLabel: selected.label,
                             billable: billableForProject(selected, entry.billable),
+                            taskId: selected.taskId,
                           })
                         }
                       />
@@ -1742,6 +1908,7 @@ export default function Home() {
                   <ProjectLookup
                     label="Manual entry project"
                     value={manualDraft.projectLabel}
+                    options={projectLookupOptions}
                     required
                     showLabel={false}
                     onChange={(selectedProject) =>
@@ -1750,6 +1917,7 @@ export default function Home() {
                         projectValue: selectedProject.idPricingStructure,
                         projectLabel: selectedProject.label,
                         billable: billableForProject(selectedProject, manualDraft.billable),
+                        taskId: selectedProject.taskId,
                       })
                     }
                   />

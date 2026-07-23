@@ -58,13 +58,14 @@ the technical reference behind those steps.
    ```text
    Using my Google Calendar integration, fetch my primary calendar events from YYYY-MM-DD to YYYY-MM-DD.
    Write them to /Users/kendraramey/Documents/Time Logging/.local/calendar-events.json as JSON with a top-level "records" array.
-   Each record must have: id, title, start, end, project, activityType, billable, responseStatus, transparency.
+   Each record must have: id, title, start, end, project, activityType, billable, responseStatus, transparency, and attendeeEmails.
+   attendeeEmails should include every non-resource attendee email when available so the app can match external client domains to active Salesforce projects for the selected Delivery Team.
    Use the Crisis24 - OnSolve Migration - (SOPS) project for Meetings and Coding and Configuration.
    Use Kicksaw - Internal Time Tracking for People and Team Activities.
    Exclude declined, Focus Time, OOO/out-of-office, transparent, birthday, and FYI events.
    ```
 
-9. In the app, click `Refresh Calendar`. The local proxy rereads
+9. Select your Delivery Team at the top of the app, then click `Refresh Calendar`. The local proxy rereads
    `.local/calendar-events.json` each time, so any new Codex sync will appear
    after refresh.
 

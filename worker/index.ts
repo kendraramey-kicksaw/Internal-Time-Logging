@@ -33,18 +33,12 @@ interface ExecutionContext {
 
 const TASKRAY_TIME_OBJECT = "TASKRAY__trTaskTime__c";
 const TASKRAY_TIME_OWNER_ID = "0054T000001in8HQAQ";
+const CLIENT_TASK_RECORD_TYPE_ID = "012Qh0000015yz3IAA";
 const DEFAULT_SALESFORCE_API_VERSION = "v67.0";
 const DEFAULT_SALESFORCE_LOGIN_URL = "https://login.salesforce.com";
 const DEFAULT_GOOGLE_CALENDAR_ID = "primary";
 const DEFAULT_GOOGLE_CALENDAR_TIMEZONE = "America/Toronto";
 const OAUTH_CALLBACK_PATH = "/api/oauth/callback";
-const CRISIS_PROJECT = {
-  id: "a0uQh000004SaXhIAK",
-  label: "Crisis24 - OnSolve Migration - (SOPS)",
-  idPricingStructure: "a0uQh000004SaXhIAK-Capacity",
-  pricingStructure: "Capacity",
-  taskId: "a0tQh00000pN8R9IAK",
-};
 const INTERNAL_PROJECT = {
   id: "a0uQh000007aLujIAE",
   label: "Kicksaw - Internal Time Tracking",
@@ -52,6 +46,13 @@ const INTERNAL_PROJECT = {
   pricingStructure: "Internal",
   taskId: "a0tQh00000pNVP9IAO",
 };
+const BLANK_PROJECT = {
+  id: "",
+  label: "",
+  idPricingStructure: "",
+  pricingStructure: "Capacity",
+};
+const DELIVERY_TEAMS = new Set(["AOD", "SOPS", "COPS", "MOPS", "Engineering"]);
 
 type SalesforceTimeRecord = {
   Id: string;
@@ -102,6 +103,31 @@ type GoogleCalendarEvent = {
     responseStatus?: string;
     self?: boolean;
   }>;
+};
+
+type TaskRayProjectRecord = {
+  Id: string;
+  Name: string;
+  Id_Pricing_Structure__c?: string;
+  Delivery_Team__c?: string;
+  TASKRAY__trAccount__r?: {
+    Website?: string;
+  };
+};
+
+type TaskRayProjectTaskRecord = {
+  Id: string;
+  TASKRAY__Project__c: string;
+};
+
+type ProjectOption = {
+  id: string;
+  label: string;
+  idPricingStructure: string;
+  pricingStructure: string;
+  taskId?: string;
+  deliveryTeam?: string;
+  websiteDomain?: string;
 };
 
 type GoogleCalendarEventsResponse = {
@@ -175,9 +201,33 @@ const worker = {
       return jsonResponse({ error: "Method not allowed" }, 405);
     }
 
+    if (url.pathname === "/api/app/update-status") {
+      if (request.method === "GET") {
+        return jsonResponse({
+          local: false,
+          updateAvailable: false,
+          dirty: false,
+          message: "Hosted app updates are installed through deployment. Local users get update checks in local CLI mode.",
+        });
+      }
+      return jsonResponse({ error: "Method not allowed" }, 405);
+    }
+
+    if (url.pathname === "/api/app/update") {
+      if (request.method === "POST") {
+        return jsonResponse({ error: "Hosted app updates must be deployed from the GitHub repo." }, 400);
+      }
+      return jsonResponse({ error: "Method not allowed" }, 405);
+    }
+
     if (url.pathname === "/api/salesforce/time-entries") {
       if (request.method === "GET") return getSalesforceTimeEntries(request, env);
       if (request.method === "POST") return createSalesforceTimeEntries(request, env);
+      return jsonResponse({ error: "Method not allowed" }, 405);
+    }
+
+    if (url.pathname === "/api/salesforce/projects") {
+      if (request.method === "GET") return getSalesforceProjects(request, env);
       return jsonResponse({ error: "Method not allowed" }, 405);
     }
 
@@ -301,6 +351,8 @@ async function getGoogleCalendarEvents(request: Request, env?: Env): Promise<Res
   const start = safeDate(url.searchParams.get("start"));
   const end = safeDate(url.searchParams.get("end"));
   if (!start || !end) return jsonResponse({ error: "Start and end dates are required." }, 400);
+  const deliveryTeam = deliveryTeamFromUrl(url);
+  const salesforce = await salesforceConnection(request, env);
 
   const timezone = env?.GOOGLE_CALENDAR_TIMEZONE ?? process.env.GOOGLE_CALENDAR_TIMEZONE ?? DEFAULT_GOOGLE_CALENDAR_TIMEZONE;
   const calendarId = env?.GOOGLE_CALENDAR_ID ?? process.env.GOOGLE_CALENDAR_ID ?? DEFAULT_GOOGLE_CALENDAR_ID;
@@ -341,8 +393,19 @@ async function getGoogleCalendarEvents(request: Request, env?: Env): Promise<Res
   } while (nextPageToken);
 
   return jsonResponse({
-    records: events.flatMap((event) => normalizeGoogleCalendarEvent(event)),
+    records: await normalizeGoogleCalendarEvents(events, deliveryTeam, salesforce),
   });
+}
+
+async function getSalesforceProjects(request: Request, env?: Env): Promise<Response> {
+  const connection = await salesforceConnection(request, env);
+  if (!connection) return jsonResponse({ error: "Salesforce connection is not configured." }, 503);
+
+  const url = new URL(request.url);
+  const deliveryTeam = deliveryTeamFromUrl(url);
+  const date = safeDate(url.searchParams.get("date"));
+  const projects = await querySalesforceProjects(connection, deliveryTeam, date);
+  return jsonResponse({ records: projects });
 }
 
 async function getIntegrationStatus(request: Request, env?: Env): Promise<Response> {
@@ -844,29 +907,46 @@ function safeDate(value: string | null) {
   return value && /^\d{4}-\d{2}-\d{2}$/.test(value) ? value : null;
 }
 
-function normalizeGoogleCalendarEvent(event: GoogleCalendarEvent) {
-  if (shouldIgnoreGoogleCalendarEvent(event)) return [];
+async function normalizeGoogleCalendarEvents(
+  events: GoogleCalendarEvent[],
+  deliveryTeam: string,
+  connection: SalesforceConnection | null,
+) {
+  const normalized = [];
+
+  for (const event of events) {
+    const entry = await normalizeGoogleCalendarEvent(event, deliveryTeam, connection);
+    if (entry) normalized.push(entry);
+  }
+
+  return normalized;
+}
+
+async function normalizeGoogleCalendarEvent(
+  event: GoogleCalendarEvent,
+  deliveryTeam: string,
+  connection: SalesforceConnection | null,
+) {
+  if (shouldIgnoreGoogleCalendarEvent(event)) return null;
 
   const title = event.summary?.trim() || "Untitled calendar event";
   const start = event.start?.dateTime ?? (event.start?.date ? `${event.start.date}T00:00:00` : "");
   const end = event.end?.dateTime ?? (event.end?.date ? `${event.end.date}T00:00:00` : "");
-  if (!start || !end) return [];
+  if (!start || !end) return null;
 
-  const classification = classifyGoogleCalendarEvent(event);
+  const classification = await classifyGoogleCalendarEvent(event, deliveryTeam, connection, start.slice(0, 10));
 
-  return [
-    {
-      id: event.id,
-      title,
-      start,
-      end,
-      project: classification.project,
-      activityType: classification.activityType,
-      billable: classification.project.id !== INTERNAL_PROJECT.id,
-      responseStatus: selfResponseStatus(event),
-      transparency: event.transparency === "transparent" ? "transparent" : "opaque",
-    },
-  ];
+  return {
+    id: event.id,
+    title,
+    start,
+    end,
+    project: classification.project,
+    activityType: classification.activityType,
+    billable: classification.project.id !== INTERNAL_PROJECT.id,
+    responseStatus: selfResponseStatus(event),
+    transparency: event.transparency === "transparent" ? "transparent" : "opaque",
+  };
 }
 
 function shouldIgnoreGoogleCalendarEvent(event: GoogleCalendarEvent) {
@@ -889,10 +969,15 @@ function shouldIgnoreGoogleCalendarEvent(event: GoogleCalendarEvent) {
   );
 }
 
-function classifyGoogleCalendarEvent(event: GoogleCalendarEvent): {
+async function classifyGoogleCalendarEvent(
+  event: GoogleCalendarEvent,
+  deliveryTeam: string,
+  connection: SalesforceConnection | null,
+  eventDate: string,
+): Promise<{
   activityType: "Meeting" | "Coding and Configuration" | "People and Team Activities";
-  project: typeof CRISIS_PROJECT | typeof INTERNAL_PROJECT;
-} {
+  project: ProjectOption;
+}> {
   const title = (event.summary ?? "").toLowerCase();
   const attendeeCount = workAttendeeCount(event);
   const peopleAndTeam =
@@ -926,10 +1011,132 @@ function classifyGoogleCalendarEvent(event: GoogleCalendarEvent): {
     title.includes("huddle") ||
     title.includes("1:1");
 
+  const domains = externalAttendeeDomains(event);
+  const project = connection && domains.length
+    ? (await matchProjectByDomains(connection, domains, deliveryTeam, eventDate)) ?? BLANK_PROJECT
+    : BLANK_PROJECT;
+
   return {
     activityType: looksLikeMeeting ? "Meeting" : "Coding and Configuration",
-    project: CRISIS_PROJECT,
+    project,
   };
+}
+
+async function matchProjectByDomains(
+  connection: SalesforceConnection,
+  domains: string[],
+  deliveryTeam: string,
+  eventDate: string,
+) {
+  const projects = await querySalesforceProjects(connection, deliveryTeam, eventDate);
+  return projects.find((project) =>
+    project.websiteDomain && domains.some((domain) => domainsMatch(project.websiteDomain ?? "", domain)),
+  );
+}
+
+async function querySalesforceProjects(
+  connection: SalesforceConnection,
+  deliveryTeam: string,
+  date: string | null,
+): Promise<ProjectOption[]> {
+  const filters = [
+    "TASKRAY__Status__c = false",
+    "TASKRAY__trTemplate__c = false",
+    "Parent_Project__c = false",
+    `Delivery_Team__c = '${escapeSoql(deliveryTeam)}'`,
+  ];
+
+  if (date) {
+    filters.push(`(OfficialStartDate__c = null OR OfficialStartDate__c <= ${date})`);
+  }
+
+  const query = [
+    "SELECT Id, Name, Id_Pricing_Structure__c, TASKRAY__trAccount__r.Website, Delivery_Team__c",
+    "FROM TASKRAY__Project__c",
+    `WHERE ${filters.join(" AND ")}`,
+    "ORDER BY Name ASC",
+  ].join(" ");
+  const response = await salesforceFetch<{ records: TaskRayProjectRecord[] }>(
+    connection,
+    `/services/data/${connection.apiVersion}/query?q=${encodeURIComponent(query)}`,
+  );
+  if (!response.ok) return [INTERNAL_PROJECT];
+
+  const projects = response.data.records.map(projectFromRecord);
+  const taskIds = await taskIdsForProjects(connection, projects.map((project) => project.id));
+
+  return [
+    INTERNAL_PROJECT,
+    ...projects.map((project) => ({
+      ...project,
+      taskId: taskIds[project.id],
+    })),
+  ];
+}
+
+async function taskIdsForProjects(connection: SalesforceConnection, projectIds: string[]) {
+  if (!projectIds.length) return {} as Record<string, string>;
+  const quotedIds = projectIds.map((id) => `'${escapeSoql(id)}'`).join(",");
+  const query = [
+    "SELECT Id, TASKRAY__Project__c",
+    "FROM TASKRAY__Project_Task__c",
+    `WHERE RecordTypeId = '${CLIENT_TASK_RECORD_TYPE_ID}'`,
+    "AND TASKRAY__Archived__c = false",
+    `AND TASKRAY__Project__c IN (${quotedIds})`,
+  ].join(" ");
+  const response = await salesforceFetch<{ records: TaskRayProjectTaskRecord[] }>(
+    connection,
+    `/services/data/${connection.apiVersion}/query?q=${encodeURIComponent(query)}`,
+  );
+  if (!response.ok) return {} as Record<string, string>;
+
+  return Object.fromEntries(response.data.records.map((record) => [record.TASKRAY__Project__c, record.Id]));
+}
+
+function projectFromRecord(record: TaskRayProjectRecord): ProjectOption {
+  const idPricingStructure = record.Id_Pricing_Structure__c ?? `${record.Id}-Capacity`;
+  return {
+    id: record.Id,
+    label: record.Name,
+    idPricingStructure,
+    pricingStructure: idPricingStructure.split("-").at(-1) ?? "Capacity",
+    deliveryTeam: record.Delivery_Team__c,
+    websiteDomain: websiteDomain(record.TASKRAY__trAccount__r?.Website),
+  };
+}
+
+function externalAttendeeDomains(event: GoogleCalendarEvent) {
+  return Array.from(new Set((event.attendees ?? [])
+    .filter((attendee) => !attendee.resource)
+    .map((attendee) => attendee.email?.toLowerCase() ?? "")
+    .map((email) => normalizeDomain(email.split("@").at(-1) ?? ""))
+    .filter((domain) => domain && domain !== "kicksaw.com")));
+}
+
+function websiteDomain(value?: string) {
+  if (!value) return "";
+  try {
+    return normalizeDomain(new URL(value.includes("://") ? value : `https://${value}`).hostname);
+  } catch {
+    return normalizeDomain(value.replace(/^https?:\/\//, "").split("/")[0] ?? "");
+  }
+}
+
+function normalizeDomain(value: string) {
+  return value.trim().toLowerCase().replace(/^www\./, "");
+}
+
+function domainsMatch(website: string, attendee: string) {
+  return website === attendee || website.endsWith(`.${attendee}`) || attendee.endsWith(`.${website}`);
+}
+
+function deliveryTeamFromUrl(url: URL) {
+  const requested = url.searchParams.get("deliveryTeam") ?? "SOPS";
+  return DELIVERY_TEAMS.has(requested) ? requested : "SOPS";
+}
+
+function escapeSoql(value: string) {
+  return String(value).replace(/\\/g, "\\\\").replace(/'/g, "\\'");
 }
 
 function selfResponseStatus(event: GoogleCalendarEvent): "accepted" | "declined" | null {

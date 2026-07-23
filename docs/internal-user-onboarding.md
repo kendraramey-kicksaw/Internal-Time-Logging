@@ -53,9 +53,11 @@ After Salesforce auth succeeds:
 3. Start the app with npm run dev.
 4. Tell me the local URL to open.
 
-Then use my connected Google Calendar integration to fetch my primary calendar events for the suggested-entry date range I request.
+Then have me select my Delivery Team in the app: AOD, SOPS, COPS, MOPS, or Engineering.
+Use my connected Google Calendar integration to fetch my primary calendar events for the suggested-entry date range I request.
 Write the events to .local/calendar-events.json in this repo as JSON with a top-level "records" array.
-Each record must have: id, title, start, end, project, activityType, billable, responseStatus, transparency.
+Each record must have: id, title, start, end, project, activityType, billable, responseStatus, transparency, and attendeeEmails.
+attendeeEmails should include every non-resource attendee email when available so the app can match external client domains to active Salesforce projects for my selected Delivery Team.
 Use the app rules for categorizing calendar time:
 - Exclude declined events.
 - Exclude Focus Time.
@@ -89,10 +91,11 @@ Do not use Kendra's Salesforce credentials or owner id. The imported Salesforce 
    http://localhost:3000
    ```
 
-4. Ask Codex to refresh your calendar file for the dates you want.
-5. Click `Refresh Calendar` in the app.
-6. Review, edit, remove, or add suggested rows.
-7. Click `Import to Salesforce`.
+4. Confirm your Delivery Team is selected at the top of the app.
+5. Ask Codex to refresh your calendar file for the dates you want, including attendee emails.
+6. Click `Refresh Calendar` in the app.
+7. Review, edit, remove, or add suggested rows.
+8. Click `Import to Salesforce`.
 
 ## Troubleshooting
 
