@@ -82,6 +82,7 @@ const server = createServer(async (request, response) => {
   } catch (error) {
     return sendJson(response, 500, {
       error: error instanceof Error ? error.message : "Local proxy request failed.",
+      details: error?.details,
     });
   }
 });
@@ -518,13 +519,34 @@ async function createSalesforceTimeEntries(records) {
       : record,
   );
 
-  return salesforceRest(`/services/data/${apiVersion}/composite/sobjects`, {
+  const result = await salesforceRest(`/services/data/${apiVersion}/composite/sobjects`, {
     method: "POST",
     body: JSON.stringify({
       allOrNone: true,
       records: ownedRecords,
     }),
   });
+
+  const failedResults = Array.isArray(result) ? result.filter((item) => !item?.success) : [];
+  if (failedResults.length > 0) {
+    const messages = failedResults
+      .flatMap((item, index) =>
+        (item.errors ?? []).map((error) => {
+          const fields = Array.isArray(error.fields) && error.fields.length ? ` (${error.fields.join(", ")})` : "";
+          return `Row ${index + 1}: ${error.message ?? error.statusCode ?? "Salesforce row failed."}${fields}`;
+        }),
+      )
+      .filter(Boolean);
+
+    const error = new Error(messages.join(" ") || "Salesforce rejected one or more time entries.");
+    error.details = failedResults;
+    throw error;
+  }
+
+  return {
+    records: result,
+    createdCount: Array.isArray(result) ? result.filter((item) => item?.success).length : 0,
+  };
 }
 
 async function getSalesforceOrg() {

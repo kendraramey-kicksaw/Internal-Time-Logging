@@ -53,6 +53,19 @@ type ProjectResponse = {
   records: Project[];
 };
 
+type SalesforceImportResult = {
+  id?: string;
+  success?: boolean;
+  errors?: { message?: string; statusCode?: string; fields?: string[] }[];
+};
+
+type SalesforceImportResponse = {
+  records?: SalesforceImportResult[];
+  createdCount?: number;
+  error?: string;
+  details?: SalesforceImportResult[];
+};
+
 type AppUpdateStatus = {
   local: boolean;
   gitAvailable?: boolean;
@@ -125,7 +138,6 @@ const monthStart = "2026-07-01";
 const monthEnd = "2026-07-31";
 const defaultSuggestionStart = "2026-07-11";
 const defaultSuggestionEnd = todayIso();
-const ownerId = "0054T000001in8HQAQ";
 const salesforceBaseUrl = "https://kicksaw.my.salesforce.com";
 const localProxyBaseUrl = "http://127.0.0.1:8789";
 const deliveryTeams: DeliveryTeam[] = ["AOD", "SOPS", "COPS", "MOPS", "Engineering"];
@@ -1033,7 +1045,6 @@ function compactPayloadRecord(entry: TimeEntry) {
   return {
     attributes: { type: "TASKRAY__trTaskTime__c" },
     RecordTypeId: RECORD_TYPE_IDS[recordTypeDeveloperName],
-    TASKRAY__Owner__c: ownerId,
     TASKRAY__Date__c: entry.date,
     TASKRAY__Project__c: projectIdFromValue(entry.projectValue),
     TASKRAY__Task__c: taskIdForEntry(entry),
@@ -1812,11 +1823,19 @@ export default function Home() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),
       });
-      const body = await response.json();
+      const body = (await response.json()) as SalesforceImportResponse;
 
       if (!response.ok) throw new Error(body.error ?? "Salesforce import failed.");
 
-      setImportStatus(`Imported ${payload.length} row${payload.length === 1 ? "" : "s"} to Salesforce.`);
+      const createdCount =
+        typeof body.createdCount === "number"
+          ? body.createdCount
+          : (body.records ?? []).filter((record) => record.success).length;
+      if (createdCount !== payload.length) {
+        throw new Error(`Salesforce confirmed ${createdCount} of ${payload.length} row${payload.length === 1 ? "" : "s"}.`);
+      }
+
+      setImportStatus(`Imported ${createdCount} row${createdCount === 1 ? "" : "s"} to Salesforce.`);
       await loadSalesforceRows();
     } catch (error) {
       setImportStatus(error instanceof Error ? error.message : "Salesforce import failed.");
