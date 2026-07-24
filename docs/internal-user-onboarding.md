@@ -67,6 +67,18 @@ Use the app rules for categorizing calendar time:
 - People and Team Activities use Kicksaw - Internal Time Tracking.
 - Meetings with DJ and me only are internal.
 
+Set up or confirm these daily Codex automations using my current timezone from
+this Codex session or my device locale. Do not hardcode any timezone:
+- 4:00 PM local time: remind me to log my time.
+- 4:15 PM local time: sync the current month of Google Calendar events into
+  .local/calendar-events.json for this repo, including attendee emails.
+- 4:30 PM local time: show me or relaunch the local app so I can review and
+  submit time.
+If an automation for one of these already exists, update or reuse it instead of
+creating a duplicate. If the current task can only keep one thread follow-up,
+use that follow-up for the 4:30 PM app launch and create the reminder/sync as
+separate scheduled automations.
+
 Once the file is written, have me click Refresh Suggestions in the app.
 Do not use Kendra's Salesforce credentials or owner id. The imported Salesforce records must use my authenticated Salesforce CLI user.
 ```
@@ -96,6 +108,18 @@ Do not use Kendra's Salesforce credentials or owner id. The imported Salesforce 
 6. Click `Refresh Suggestions` in the app.
 7. Review, edit, remove, or add suggested rows.
 8. Click `Import to Salesforce`.
+
+## Optional Daily Schedule
+
+Ask Codex to set up daily automations in your current timezone:
+
+- 4:00 PM local time: remind you to log time.
+- 4:15 PM local time: sync the current month of Google Calendar events into
+  `.local/calendar-events.json`.
+- 4:30 PM local time: show or relaunch the local app so you can submit time.
+
+Codex should use the timezone from your current session or device locale, not a
+hardcoded timezone.
 
 ## Troubleshooting
 

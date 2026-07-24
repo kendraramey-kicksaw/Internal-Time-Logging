@@ -69,6 +69,18 @@ the technical reference behind those steps.
    `.local/calendar-events.json` each time, so any new Codex sync will appear
    after refresh.
 
+10. Optional: ask Codex to set up the daily time logging schedule in your
+    current timezone from the Codex session or your device locale. Do not
+    hardcode any timezone:
+
+    ```text
+    Set up or confirm daily Codex automations for this Time Logging app using my current timezone.
+    At 4:00 PM local time, remind me to log my time.
+    At 4:15 PM local time, sync the current month of Google Calendar events into this repo's .local/calendar-events.json file, including attendee emails.
+    At 4:30 PM local time, show or relaunch the local app so I can review and submit time.
+    If any automation already exists, update or reuse it instead of creating a duplicate.
+    ```
+
 ## Setup for Other Kicksaw Users
 
 1. Give the user access to this project folder or repo.
