@@ -1,141 +1,130 @@
 # Local CLI Setup
 
-Phase 1 runs the Time Logging app locally and uses each user's own Salesforce CLI
-login. Google Calendar events come from a local file that Codex can refresh from
-the user's connected Google Calendar integration.
+Phase 1 runs the Time Logging app locally. Salesforce reads and imports use the
+user authenticated in Salesforce CLI. Google Calendar suggestions come from a
+local file that Codex writes from the user's connected Google Calendar
+integration.
 
-Internal teammates who are starting from the GitHub invite email should use
-[internal-user-onboarding.md](internal-user-onboarding.md) first. This file is
-the technical reference behind those steps.
+For the simplest user-facing flow, start with
+[internal-user-onboarding.md](internal-user-onboarding.md). This file is the
+technical reference.
 
-## One-Time Setup for You
+## One-Time Setup
 
-1. Install Salesforce CLI if it is not already installed:
+1. Clone the public repo:
+
+   ```bash
+   git clone https://github.com/kendraramey-kicksaw/Internal-Time-Logging.git
+   cd Internal-Time-Logging
+   ```
+
+2. Install Node.js `22.13.0` or newer if needed.
+
+3. Install Salesforce CLI if needed:
 
    ```bash
    npm install --global @salesforce/cli
    ```
 
-2. Authenticate Salesforce:
+4. Authenticate Salesforce:
 
    ```bash
    sf org login web --alias KicksawProd --instance-url https://login.salesforce.com --set-default
    ```
 
-3. Confirm Salesforce is connected:
+5. Confirm Salesforce is connected:
 
    ```bash
    sf org display --target-org KicksawProd
    ```
 
-4. Install app dependencies from this project folder:
+6. Install app dependencies:
 
    ```bash
    npm install
    ```
 
-5. Start the local Salesforce proxy in one terminal:
+7. Start the local Salesforce proxy in one terminal:
 
    ```bash
    npm run local:proxy
    ```
 
-6. Start the app in another terminal:
+8. Start the app in another terminal:
 
    ```bash
-   npm run dev
+   npm run dev -- --port 3001
    ```
 
-7. Open the local app:
+9. Open the local app:
 
    ```text
-   http://localhost:3000
+   http://localhost:3001
    ```
 
-8. To sync calendar suggestions, make sure your Google Calendar integration is
-   connected in Codex, then ask Codex:
+Keep both local processes running while using the app. If either process stops,
+the app or Salesforce connection will stop working.
 
-   ```text
-   Using my Google Calendar integration, fetch my primary calendar events from YYYY-MM-DD to YYYY-MM-DD.
-   Write them to /Users/kendraramey/Documents/Time Logging/.local/calendar-events.json as JSON with a top-level "records" array.
-   Each record must have: id, title, start, end, project, activityType, billable, responseStatus, transparency, and attendeeEmails.
-   attendeeEmails should include every non-resource attendee email when available so the app can match external client domains to active Salesforce projects for the selected Delivery Team.
-   Use the Crisis24 - OnSolve Migration - (SOPS) project for Meetings and Coding and Configuration.
-   Use Kicksaw - Internal Time Tracking for People and Team Activities.
-   Exclude declined, Focus Time, OOO/out-of-office, transparent, birthday, and FYI events.
-   ```
+## Calendar Sync Prompt
 
-9. Select your Delivery Team at the top of the app, then click `Refresh Suggestions`. The local proxy rereads
-   `.local/calendar-events.json` each time, so any new Codex sync will appear
-   after refresh.
+Make sure Google Calendar is connected in Codex, then ask Codex to write the
+calendar file. Use the user's actual project folder path.
 
-10. Optional: ask Codex to set up the daily time logging schedule in your
-    current timezone from the Codex session or your device locale. Do not
-    hardcode any timezone:
+```text
+Using my Google Calendar integration, fetch my primary calendar events for the full current calendar month using my current timezone.
+Write them to <PROJECT_FOLDER>/.local/calendar-events.json as JSON with a top-level "records" array.
+Each record must have: id, title, start, end, project, activityType, billable, responseStatus, transparency, and attendeeEmails.
+attendeeEmails should include every non-resource attendee email when available so the app can match external client domains to active Salesforce projects for the selected Delivery Team.
+Exclude declined, Focus Time, OOO/out-of-office, transparent, birthday, and FYI events.
+Consolidate same-day calendar entries with the same title.
+Treat meetings with DJ and me only as internal.
+Use Kicksaw - Internal Time Tracking for People and Team Activities.
+Use my Default Project only for otherwise blank non-internal suggestions.
+Do not use another user's Salesforce credentials, owner id, or local calendar data.
+```
 
-    ```text
-    Set up or confirm daily Codex automations for this Time Logging app using my current timezone.
-    At 4:00 PM local time, remind me to log my time.
-    At 4:15 PM local time, sync the current month of Google Calendar events into this repo's .local/calendar-events.json file, including attendee emails.
-    At 4:30 PM local time, show or relaunch the local app so I can review and submit time.
-    If any automation already exists, update or reuse it instead of creating a duplicate.
-    ```
+After Codex writes the file, click `Refresh Suggestions`. The local proxy rereads
+`.local/calendar-events.json` each time suggestions are refreshed.
 
-## Setup for Other Kicksaw Users
+## Project And Salesforce Refresh
 
-1. Give the user access to this project folder or repo.
+- Select a Delivery Team at the top of the app: AOD, SOPS, COPS, MOPS, or
+  Engineering.
+- Click `Refresh Projects` to fetch live active Salesforce projects for that
+  Delivery Team.
+- Click `Refresh Salesforce` to fetch live TaskRay Time records for the selected
+  date range.
+- Salesforce records are imported as the CLI-authenticated user. The app does
+  not use Kendra's owner id in local CLI mode.
 
-2. Have them install Node.js `22.13.0` or newer.
+## Optional Weekday Schedule
 
-3. Have them install Salesforce CLI:
+Ask Codex to set up weekday-only automations in the user's current timezone:
 
-   ```bash
-   npm install --global @salesforce/cli
-   ```
+```text
+Set up or confirm weekday-only Codex automations for this Time Logging app using my current timezone.
+At 4:00 PM local time, remind me to log my time.
+At 4:15 PM local time, sync the current month of Google Calendar events into this repo's .local/calendar-events.json file, including attendee emails.
+At 4:30 PM local time, show or relaunch the local app so I can review and submit time.
+Use the same Codex task/chat for the 4:00 PM reminder and 4:30 PM app launch when possible.
+If Codex only allows one same-task heartbeat, combine 4:00 PM and 4:30 PM into one weekday heartbeat and use a separate weekday cron for the 4:15 PM calendar sync.
+If any automation already exists, update or reuse it instead of creating a duplicate.
+Skip weekends.
+Do not hardcode a timezone.
+```
 
-4. Have them authenticate their own Salesforce user:
+## Updating The App
 
-   ```bash
-   sf org login web --alias KicksawProd --instance-url https://login.salesforce.com --set-default
-   ```
+Local users can click `Check for Updates` and `Update App` in the app. This uses
+Git to pull from the public repo and reinstall dependencies when needed.
 
-5. Have them confirm the org is connected:
-
-   ```bash
-   sf org display --target-org KicksawProd
-   ```
-
-6. From the project folder, have them install dependencies:
-
-   ```bash
-   npm install
-   ```
-
-7. Have them start the local proxy:
-
-   ```bash
-   npm run local:proxy
-   ```
-
-8. In a second terminal, have them start the app:
-
-   ```bash
-   npm run dev
-   ```
-
-9. Have them open:
-
-   ```text
-   http://localhost:3000
-   ```
-
-10. For calendar suggestions, have them connect Google Calendar in Codex, click
-    `Sync Calendar with Codex` in the app, and ask Codex to sync their events
-    into their local `.local/calendar-events.json` file using that copied prompt.
+If the update fails because of local changes, ask Codex to inspect the repo
+before updating. Do not discard local changes unless the user explicitly asks.
 
 ## Notes
 
 - The local proxy listens on `http://127.0.0.1:8789`.
+- The app expects the proxy on port `8789`.
 - If a user wants a different Salesforce CLI alias, start the proxy with:
 
   ```bash
@@ -148,10 +137,7 @@ the technical reference behind those steps.
   LOCAL_PROXY_PORT=8790 npm run local:proxy
   ```
 
-  The app currently expects port `8789`, so only change this if the app is
-  updated to match.
+  Only do this if the app is updated to use the same proxy port.
 
-- The app imports time entries as the Salesforce user authenticated in that
-  local CLI session. It does not use Kendra's Salesforce owner id in local mode.
-- Local calendar events are ignored by Git via `.local/` so personal calendar
+- Local calendar events are ignored by Git via `.local/`, so personal calendar
   data does not get committed.
