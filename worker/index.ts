@@ -226,6 +226,11 @@ const worker = {
       return jsonResponse({ error: "Method not allowed" }, 405);
     }
 
+    if (url.pathname.startsWith("/api/salesforce/time-entries/")) {
+      if (request.method === "DELETE") return deleteSalesforceTimeEntry(request, env);
+      return jsonResponse({ error: "Method not allowed" }, 405);
+    }
+
     if (url.pathname === "/api/salesforce/projects") {
       if (request.method === "GET") return getSalesforceProjects(request, env);
       return jsonResponse({ error: "Method not allowed" }, 405);
@@ -339,6 +344,27 @@ async function createSalesforceTimeEntries(request: Request, env?: Env): Promise
   return jsonResponse(response.data, 201);
 }
 
+async function deleteSalesforceTimeEntry(request: Request, env?: Env): Promise<Response> {
+  const connection = await salesforceConnection(request, env);
+  if (!connection) return jsonResponse({ error: "Salesforce connection is not configured." }, 503);
+
+  const recordId = decodeURIComponent(new URL(request.url).pathname.split("/").pop() ?? "");
+  if (!isSalesforceId(recordId)) return jsonResponse({ error: "A valid Salesforce time entry Id is required." }, 400);
+
+  const response = await salesforceFetch<Record<string, never>>(
+    connection,
+    `/services/data/${connection.apiVersion}/sobjects/${TASKRAY_TIME_OBJECT}/${recordId}`,
+    { method: "DELETE" },
+  );
+  if (!response.ok) return response.error;
+
+  return jsonResponse({ deleted: true, recordId });
+}
+
+function isSalesforceId(value: string) {
+  return /^[a-zA-Z0-9]{15,18}$/.test(value);
+}
+
 async function getGoogleCalendarEvents(request: Request, env?: Env): Promise<Response> {
   const user = authenticatedUser(request);
   const googleConnection = user ? await connectionForUser(env, user.email, "google") : null;
@@ -415,6 +441,7 @@ async function getIntegrationStatus(request: Request, env?: Env): Promise<Respon
   await ensureOAuthSchema(env);
   const google = await connectionRow(env, user.email, "google");
   const salesforce = await connectionRow(env, user.email, "salesforce");
+  const fallbackSalesforce = salesforceEnvConnection(env);
 
   return jsonResponse({
     user,
@@ -422,11 +449,14 @@ async function getIntegrationStatus(request: Request, env?: Env): Promise<Respon
       google: {
         configured: oauthConfigured(env, "google"),
         connected: Boolean(google),
+        email: google ? user.email : null,
       },
       salesforce: {
         configured: oauthConfigured(env, "salesforce"),
         connected: Boolean(salesforce),
-        fallbackConfigured: Boolean(salesforceEnvConnection(env)),
+        fallbackConfigured: Boolean(fallbackSalesforce),
+        instanceUrl: salesforce?.instance_url ?? fallbackSalesforce?.instanceUrl ?? null,
+        username: salesforce ? user.email : null,
       },
     },
   });

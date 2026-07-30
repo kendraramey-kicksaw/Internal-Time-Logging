@@ -88,6 +88,33 @@ button.danger:hover {
   color: var(--danger);
 }
 
+.button-link {
+  display: inline-flex;
+  min-height: 36px;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: #ffffff;
+  color: var(--foreground);
+  font-weight: 700;
+  padding: 0 12px;
+  text-decoration: none;
+}
+
+.button-link:hover {
+  border-color: var(--accent);
+  color: var(--accent-strong);
+}
+
+button.compact,
+.button-link.compact {
+  min-height: 28px;
+  width: 100%;
+  padding: 0 8px;
+  font-size: 0.76rem;
+}
+
 input,
 select,
 textarea {
@@ -266,6 +293,13 @@ h3 {
   gap: 16px;
 }
 
+.integration-heading-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
 .integration-heading p {
   margin: 6px 0 0;
   color: var(--muted);
@@ -335,6 +369,18 @@ h3 {
   flex-wrap: wrap;
   justify-content: flex-end;
   gap: 8px;
+}
+
+.integration-action-stack {
+  display: grid;
+  justify-items: end;
+  gap: 6px;
+  min-width: max-content;
+}
+
+.integration-action-stack .sync-status {
+  max-width: 260px;
+  text-align: right;
 }
 
 .metrics > div {
@@ -606,7 +652,7 @@ h3 {
 
 .suggested-controls {
   display: grid;
-  grid-template-columns: minmax(140px, 170px) minmax(280px, 1fr) auto minmax(180px, max-content) repeat(3, max-content);
+  grid-template-columns: minmax(140px, 170px) minmax(280px, 1fr) auto minmax(180px, max-content) repeat(2, max-content);
   align-items: end;
   gap: 10px;
   margin-bottom: 14px;
@@ -676,11 +722,13 @@ td {
 }
 
 .suggested-table th:nth-child(4),
-.manual-table th:nth-child(4) {
+.manual-table th:nth-child(4),
+.salesforce-table th:nth-child(5) {
   text-align: center;
 }
 
-.suggested-table th:nth-child(4) .sort-button {
+.suggested-table th:nth-child(4) .sort-button,
+.salesforce-table th:nth-child(5) .sort-button {
   justify-content: center;
 }
 
@@ -784,6 +832,34 @@ th {
 
 .salesforce-table th {
   position: sticky;
+}
+
+.salesforce-table th:nth-child(5),
+.salesforce-table td:nth-child(5) {
+  text-align: center;
+  white-space: nowrap;
+  overflow-wrap: normal;
+}
+
+.salesforce-table th:nth-child(9),
+.salesforce-table td:nth-child(9) {
+  text-align: center;
+  white-space: nowrap;
+  overflow-wrap: normal;
+}
+
+.salesforce-table td:nth-child(9) {
+  vertical-align: middle;
+}
+
+.actions-header {
+  text-align: center;
+}
+
+.table-action-stack {
+  display: grid;
+  gap: 6px;
+  justify-items: stretch;
 }
 
 .sort-button {
@@ -928,6 +1004,23 @@ input:disabled {
 
   .header-button-bar {
     justify-content: flex-start;
+  }
+
+  .integration-heading-actions {
+    justify-content: flex-start;
+  }
+
+  .integration-action-stack {
+    justify-items: start;
+    min-width: 0;
+  }
+
+  .integration-action-stack .integration-actions {
+    justify-content: flex-start;
+  }
+
+  .integration-action-stack .sync-status {
+    text-align: left;
   }
 
   .action-status {

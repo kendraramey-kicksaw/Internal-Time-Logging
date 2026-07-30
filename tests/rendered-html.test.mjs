@@ -45,7 +45,8 @@ test("server-renders the calendar time-entry workspace", async () => {
   assert.match(html, /Refresh Projects/);
   assert.match(html, /Dashboard/);
   assert.match(html, /Time Logged Today/);
-  assert.match(html, /Sync Calendar with Codex/);
+  assert.match(html, /Sync Calendar/);
+  assert.doesNotMatch(html, /Sync Calendar with Codex/);
   assert.match(html, /Refresh Suggestions/);
   assert.match(html, /Calendar file last synced/);
   assert.match(html, /Calendar snapshot loaded/);
@@ -54,6 +55,8 @@ test("server-renders the calendar time-entry workspace", async () => {
   assert.match(html, /Include unaccepted meetings/);
   assert.match(html, /Suggested entry rules/);
   assert.match(html, /Actions/);
+  assert.match(html, /Edit/);
+  assert.match(html, /Delete/);
   assert.match(html, /Add Entry/);
   assert.match(html, /TIME-178790/);
   assert.match(html, /Build -Deployments to PC/);

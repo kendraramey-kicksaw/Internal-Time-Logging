@@ -69,6 +69,11 @@ const server = createServer(async (request, response) => {
       return sendJson(response, 200, await salesforceTimeEntries(url));
     }
 
+    if (url.pathname.startsWith("/api/salesforce/time-entries/") && request.method === "DELETE") {
+      const result = await deleteSalesforceTimeEntry(url.pathname);
+      return sendJson(response, result.status ?? 200, result);
+    }
+
     if (url.pathname === "/api/salesforce/projects" && request.method === "GET") {
       return sendJson(response, 200, await salesforceProjects(url));
     }
@@ -95,8 +100,13 @@ server.listen(port, "127.0.0.1", () => {
 
 async function integrationStatus() {
   const salesforce = await getSalesforceOrg().then(
-    (org) => ({ connected: true, username: org.username }),
-    () => ({ connected: false, username: null }),
+    (org) => ({
+      connected: true,
+      instanceUrl: org.instanceUrl,
+      orgAlias,
+      username: org.username,
+    }),
+    () => ({ connected: false, instanceUrl: null, orgAlias, username: null }),
   );
   const calendarInfo = calendarFileInfo();
 
@@ -109,6 +119,7 @@ async function integrationStatus() {
       google: {
         configured: false,
         connected: calendarInfo.exists,
+        email: salesforce.username,
         localFile: calendarFile,
         lastSyncedAt: calendarInfo.lastSyncedAt,
       },
@@ -116,6 +127,8 @@ async function integrationStatus() {
         configured: false,
         connected: salesforce.connected,
         fallbackConfigured: salesforce.connected,
+        instanceUrl: salesforce.instanceUrl,
+        orgAlias: salesforce.orgAlias,
         username: salesforce.username,
       },
     },
@@ -549,6 +562,23 @@ async function createSalesforceTimeEntries(records) {
   };
 }
 
+async function deleteSalesforceTimeEntry(pathname) {
+  const recordId = decodeURIComponent(pathname.split("/").pop() ?? "");
+  if (!isSalesforceId(recordId)) {
+    return { error: "A valid Salesforce time entry Id is required.", status: 400 };
+  }
+
+  await salesforceRest(`/services/data/${apiVersion}/sobjects/${TASKRAY_TIME_OBJECT}/${recordId}`, {
+    method: "DELETE",
+  });
+
+  return { deleted: true, recordId };
+}
+
+function isSalesforceId(value) {
+  return /^[a-zA-Z0-9]{15,18}$/.test(value);
+}
+
 async function getSalesforceOrg() {
   if (cachedOrg) return cachedOrg;
 
@@ -627,7 +657,7 @@ function sendJson(response, status, body) {
 function corsHeaders() {
   return {
     "Access-Control-Allow-Headers": "Content-Type",
-    "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
+    "Access-Control-Allow-Methods": "GET, POST, DELETE, OPTIONS",
     "Access-Control-Allow-Origin": "*",
   };
 }

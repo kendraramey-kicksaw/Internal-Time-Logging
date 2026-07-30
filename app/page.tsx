@@ -82,6 +82,10 @@ type ProviderConnectionStatus = {
   fallbackConfigured?: boolean;
   localFile?: string;
   lastSyncedAt?: string | null;
+  email?: string | null;
+  username?: string | null;
+  orgAlias?: string | null;
+  instanceUrl?: string | null;
 };
 
 type IntegrationStatusResponse = {
@@ -132,7 +136,8 @@ type SalesforceColumnKey =
   | "billable"
   | "activityType"
   | "timeType"
-  | "notes";
+  | "notes"
+  | "actions";
 
 const monthStart = "2026-07-01";
 const monthEnd = "2026-07-31";
@@ -147,10 +152,11 @@ const initialSalesforceColumnWidths: Record<SalesforceColumnKey, number> = {
   recordName: 96,
   projectLabel: 190,
   hours: 70,
-  billable: 70,
+  billable: 92,
   activityType: 132,
   timeType: 108,
-  notes: 420,
+  notes: 320,
+  actions: 80,
 };
 
 const RECORD_TYPE_IDS: Record<RecordTypeDeveloperName, string> = {
@@ -1078,6 +1084,10 @@ function recordUrl(recordId: string) {
   return `${salesforceBaseUrl}/lightning/r/TASKRAY__trTaskTime__c/${recordId}/view`;
 }
 
+function recordEditUrl(recordId: string) {
+  return `${salesforceBaseUrl}/lightning/r/TASKRAY__trTaskTime__c/${recordId}/edit`;
+}
+
 function apiUrl(path: string) {
   if (
     typeof window !== "undefined" &&
@@ -1354,6 +1364,7 @@ export default function Home() {
   const [manualDraft, setManualDraft] = useState(blankEntry());
   const [salesforceSyncStatus, setSalesforceSyncStatus] = useState("Salesforce snapshot loaded");
   const [calendarSyncStatus, setCalendarSyncStatus] = useState("Calendar snapshot loaded");
+  const [calendarPromptStatus, setCalendarPromptStatus] = useState("");
   const [importStatus, setImportStatus] = useState("");
   const [suggestedStatus, setSuggestedStatus] = useState("");
   const [manualStatus, setManualStatus] = useState("");
@@ -1366,6 +1377,7 @@ export default function Home() {
   const [isRefreshingCalendar, setIsRefreshingCalendar] = useState(false);
   const [isRefreshingProjects, setIsRefreshingProjects] = useState(false);
   const [isUpdatingApp, setIsUpdatingApp] = useState(false);
+  const [deletingSalesforceId, setDeletingSalesforceId] = useState("");
   const [suggestionStartWasEdited, setSuggestionStartWasEdited] = useState(false);
   const [liveSalesforceDefaultApplied, setLiveSalesforceDefaultApplied] = useState(false);
   const [suggestionSort, setSuggestionSort] = useState<SortConfig<SuggestedSortKey>>({
@@ -1623,7 +1635,7 @@ export default function Home() {
     ].join("\n");
 
     await navigator.clipboard.writeText(prompt);
-    setCalendarSyncStatus("Codex calendar sync prompt copied.");
+    setCalendarPromptStatus("Codex calendar sync prompt copied.");
   }
 
   async function loadIntegrationStatus() {
@@ -1755,6 +1767,34 @@ export default function Home() {
     }
   }
 
+  async function deleteSalesforceRow(entry: SalesforceTimeEntry) {
+    const confirmed = window.confirm(`Delete Salesforce time entry ${entry.recordName}?`);
+    if (!confirmed) return;
+
+    setDeletingSalesforceId(entry.recordId);
+    setSalesforceSyncStatus(`Deleting ${entry.recordName}...`);
+    try {
+      const response = await fetch(apiUrl(`/api/salesforce/time-entries/${encodeURIComponent(entry.recordId)}`), {
+        method: "DELETE",
+      });
+      const body = await response.json();
+
+      if (!response.ok) throw new Error(body.error ?? "Salesforce delete failed.");
+
+      setLiveSalesforceRows((current) => current.filter((row) => row.recordId !== entry.recordId));
+      await loadSalesforceRows();
+      setSalesforceSyncStatus(`Deleted ${entry.recordName}.`);
+    } catch (error) {
+      if (error instanceof TypeError && /fetch/i.test(error.message)) {
+        setSalesforceSyncStatus("Delete could not reach the local Salesforce connection. Refresh the app and try again.");
+      } else {
+        setSalesforceSyncStatus(error instanceof Error ? error.message : "Salesforce delete failed.");
+      }
+    } finally {
+      setDeletingSalesforceId("");
+    }
+  }
+
   function salesforceStatusClass() {
     if (salesforceSyncStatus === "Salesforce live") return "sync-status live";
     if (salesforceSyncStatus === "Refreshing Salesforce..." || salesforceSyncStatus === "Salesforce snapshot loaded") {
@@ -1799,20 +1839,39 @@ export default function Home() {
     return "integration-state missing";
   }
 
+  function hostnameFromUrl(value: string | null | undefined) {
+    if (!value) return "";
+    try {
+      return new URL(value).hostname;
+    } catch {
+      return value.replace(/^https?:\/\//, "").replace(/\/$/, "");
+    }
+  }
+
   function googleConnectionLabel() {
     const google = integrationStatus?.providers.google;
+    const email = google?.email ?? integrationStatus?.user?.email;
     if (!google) return "Checking local mode";
-    if (google.connected) return google.localFile ? "Codex file synced" : "OAuth connected";
+    if (google.connected) {
+      const prefix = google.localFile ? "Codex file synced" : "Connected";
+      return email ? `${prefix}: ${email}` : prefix;
+    }
     if (google.configured) return "OAuth ready";
     return google.localFile ? "Codex sync needed" : "Codex sync mode";
   }
 
   function salesforceConnectionLabel() {
     const salesforce = integrationStatus?.providers.salesforce;
+    const orgName = salesforce?.orgAlias ?? salesforce?.username ?? hostnameFromUrl(salesforce?.instanceUrl);
+    const orgDetail = orgName ? `: ${orgName}` : "";
     if (!salesforce) return "Checking local mode";
-    if (salesforce.connected) return salesforce.configured ? "OAuth connected" : "CLI connected";
+    if (salesforce.connected) return `${salesforce.configured ? "Connected" : "CLI connected"}${orgDetail}`;
     if (salesforce.configured) return "OAuth ready";
-    return salesforce.fallbackConfigured ? "CLI fallback ready" : "CLI setup needed";
+    return salesforce.fallbackConfigured ? `CLI fallback ready${orgDetail}` : "CLI setup needed";
+  }
+
+  function showIntegrationNotice() {
+    return /failed|error|required/i.test(integrationMessage);
   }
 
   function startSalesforceColumnResize(key: SalesforceColumnKey, clientX: number) {
@@ -1926,11 +1985,13 @@ export default function Home() {
         <div className="integration-heading">
           <div>
             <h2>Connections</h2>
-            <p>{integrationStatus?.user?.email ?? integrationMessage}</p>
+            {showIntegrationNotice() ? <p>{integrationMessage}</p> : null}
           </div>
-          <button type="button" onClick={loadIntegrationStatus}>
-            Refresh Status
-          </button>
+          <div className="integration-heading-actions">
+            <button type="button" className="primary" onClick={loadIntegrationStatus}>
+              Refresh Status
+            </button>
+          </div>
         </div>
         <div className="integration-grid">
           <div className="integration-card">
@@ -1939,23 +2000,30 @@ export default function Home() {
               <strong className={integrationClass(integrationStatus?.providers.google)}>
                 {googleConnectionLabel()}
               </strong>
+              <p className={`card-note calendar-file-state ${calendarFileState}`}>
+                {usesLocalCalendarFile
+                  ? `Calendar file last synced: ${formatDateTime(calendarLastSyncedAt)}`
+                : "Google Calendar sync: live connection"}
+              </p>
             </div>
-            <div className="integration-actions">
-              <button
-                type="button"
-                className="primary"
-                disabled={!integrationStatus?.providers.google.configured}
-                onClick={() => connectProvider("google")}
-              >
-                Connect
-              </button>
-              <button
-                type="button"
-                disabled={!integrationStatus?.providers.google.connected}
-                onClick={() => disconnectProvider("google")}
-              >
-                Disconnect
-              </button>
+            <div className="integration-action-stack">
+              <div className="integration-actions">
+                {usesLocalCalendarFile ? (
+                  <button type="button" className="primary" onClick={copyCodexCalendarSyncPrompt}>
+                    Sync Calendar
+                  </button>
+                ) : null}
+                {integrationStatus?.providers.google.connected ? (
+                  <button type="button" onClick={() => disconnectProvider("google")}>
+                    Disconnect
+                  </button>
+                ) : integrationStatus?.providers.google.configured ? (
+                  <button type="button" className="primary" onClick={() => connectProvider("google")}>
+                    Connect
+                  </button>
+                ) : null}
+              </div>
+              {calendarPromptStatus ? <p className="sync-status live">{calendarPromptStatus}</p> : null}
             </div>
           </div>
           <div className="integration-card">
@@ -1966,21 +2034,15 @@ export default function Home() {
               </strong>
             </div>
             <div className="integration-actions">
-              <button
-                type="button"
-                className="primary"
-                disabled={!integrationStatus?.providers.salesforce.configured}
-                onClick={() => connectProvider("salesforce")}
-              >
-                Connect
-              </button>
-              <button
-                type="button"
-                disabled={!integrationStatus?.providers.salesforce.connected}
-                onClick={() => disconnectProvider("salesforce")}
-              >
-                Disconnect
-              </button>
+              {integrationStatus?.providers.salesforce.connected ? (
+                <button type="button" onClick={() => disconnectProvider("salesforce")}>
+                  Disconnect
+                </button>
+              ) : integrationStatus?.providers.salesforce.configured ? (
+                <button type="button" className="primary" onClick={() => connectProvider("salesforce")}>
+                  Connect
+                </button>
+              ) : null}
             </div>
           </div>
         </div>
@@ -2062,7 +2124,7 @@ export default function Home() {
                     <li>Same-day calendar entries with the same project, billable value, and activity type are consolidated.</li>
                     <li>Calendar titles become Notes, with duplicate same-day titles listed once.</li>
                     <li>Kicksaw projects are non-billable and the checkbox is locked.</li>
-                    <li>Sync Calendar with Codex rewrites the local file; Refresh Suggestions rereads it.</li>
+                    <li>Sync Calendar rewrites the local file; Refresh Suggestions rereads it.</li>
                   </ul>
                 </div>
               </details>
@@ -2070,11 +2132,6 @@ export default function Home() {
             <div className="section-messages" aria-live="polite">
               {calendarSyncStatus ? <p className={calendarStatusClass()}>{calendarSyncStatus}</p> : null}
               {projectSyncStatus ? <p className="sync-status">{projectSyncStatus}</p> : null}
-              <p className={`calendar-file-state ${calendarFileState}`}>
-                {usesLocalCalendarFile
-                  ? `Calendar file last synced: ${formatDateTime(calendarLastSyncedAt)}`
-                  : "Google Calendar sync: live connection"}
-              </p>
               {suggestedStatus ? <p className="table-status error">{suggestedStatus}</p> : null}
             </div>
           </div>
@@ -2143,9 +2200,6 @@ export default function Home() {
           </label>
           <button type="button" className="primary" onClick={() => loadProjectOptions(true)} disabled={isRefreshingProjects}>
             {isRefreshingProjects ? "Refreshing Projects..." : "Refresh Projects"}
-          </button>
-          <button type="button" className="primary" onClick={copyCodexCalendarSyncPrompt}>
-            Sync Calendar with Codex
           </button>
           <button type="button" className="primary" onClick={refreshCalendarSuggestions} disabled={isRefreshingCalendar}>
             {isRefreshingCalendar ? "Refreshing..." : "Refresh Suggestions"}
@@ -2408,6 +2462,7 @@ export default function Home() {
               <col style={{ width: salesforceColumnWidths.activityType }} />
               <col style={{ width: salesforceColumnWidths.timeType }} />
               <col style={{ width: salesforceColumnWidths.notes }} />
+              <col style={{ width: salesforceColumnWidths.actions }} />
             </colgroup>
             <thead>
               <tr>
@@ -2419,6 +2474,7 @@ export default function Home() {
                 <ResizableSortHeader label="Activity Type" sortKey="activityType" sortConfig={salesforceSort} onResizeStart={startSalesforceColumnResize} onSort={(key) => setSalesforceSort((current) => nextSort(current, key))} />
                 <ResizableSortHeader label="Time Type" sortKey="timeType" sortConfig={salesforceSort} onResizeStart={startSalesforceColumnResize} onSort={(key) => setSalesforceSort((current) => nextSort(current, key))} />
                 <ResizableSortHeader label="Notes" sortKey="notes" sortConfig={salesforceSort} onResizeStart={startSalesforceColumnResize} onSort={(key) => setSalesforceSort((current) => nextSort(current, key))} />
+                <th className="actions-header">Actions</th>
               </tr>
             </thead>
             <tbody>
@@ -2443,6 +2499,21 @@ export default function Home() {
                   <td>{entry.activityType}</td>
                   <td>{entry.timeType || "-"}</td>
                   <td>{entry.notes || "-"}</td>
+                  <td>
+                    <div className="table-action-stack">
+                      <a className="button-link compact" href={recordEditUrl(entry.recordId)} target="_blank" rel="noreferrer">
+                        Edit
+                      </a>
+                      <button
+                        type="button"
+                        className="danger compact"
+                        disabled={deletingSalesforceId === entry.recordId}
+                        onClick={() => deleteSalesforceRow(entry)}
+                      >
+                        Delete
+                      </button>
+                    </div>
+                  </td>
                 </tr>
               ))}
             </tbody>
