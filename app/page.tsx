@@ -136,12 +136,12 @@ type SalesforceColumnKey =
 
 const monthStart = "2026-07-01";
 const monthEnd = "2026-07-31";
-const defaultSuggestionStart = "2026-07-11";
 const defaultSuggestionEnd = todayIso();
 const salesforceBaseUrl = "https://kicksaw.my.salesforce.com";
 const localProxyBaseUrl = "http://127.0.0.1:8789";
 const deliveryTeams: DeliveryTeam[] = ["AOD", "SOPS", "COPS", "MOPS", "Engineering"];
 const defaultDeliveryTeam: DeliveryTeam = "SOPS";
+const projectPieColors = ["#0d6b5d", "#4f7f52", "#a57b28", "#365f7a", "#7d5c8d", "#9f4a44", "#68804d", "#54606f"];
 const initialSalesforceColumnWidths: Record<SalesforceColumnKey, number> = {
   date: 112,
   recordName: 96,
@@ -840,10 +840,11 @@ function eventHours(event: CalendarEvent) {
   return (new Date(event.end).getTime() - new Date(event.start).getTime()) / 3_600_000;
 }
 
-function shouldIgnoreCalendarEvent(event: CalendarEvent) {
+function shouldIgnoreCalendarEvent(event: CalendarEvent, includeUnacceptedMeetings: boolean) {
   const title = event.title.toLowerCase();
   return (
     event.responseStatus === "declined" ||
+    (!includeUnacceptedMeetings && event.activityType === "Meeting" && event.responseStatus !== "accepted") ||
     event.transparency === "transparent" ||
     title.includes("focus time") ||
     title.includes("ooo") ||
@@ -851,12 +852,17 @@ function shouldIgnoreCalendarEvent(event: CalendarEvent) {
   );
 }
 
-function buildCalendarSuggestions(startDate: string, endDate: string, events: CalendarEvent[] = []) {
+function buildCalendarSuggestions(
+  startDate: string,
+  endDate: string,
+  events: CalendarEvent[] = [],
+  includeUnacceptedMeetings = false,
+) {
   const grouped = new Map<string, { entry: TimeEntry; titles: Set<string> }>();
 
   for (const event of events) {
     const date = dateFromEvent(event);
-    if (date < startDate || date > endDate || shouldIgnoreCalendarEvent(event)) continue;
+    if (date < startDate || date > endDate || shouldIgnoreCalendarEvent(event, includeUnacceptedMeetings)) continue;
 
     const groupKey = [
       date,
@@ -951,6 +957,11 @@ function weekStartIso(date: string) {
 function defaultSuggestionStartFor(entries: Pick<SalesforceTimeEntry, "date">[]) {
   const latestDate = latestSalesforceDate(entries);
   return latestDate ? addDaysIso(latestDate, 1) : monthStart;
+}
+
+function defaultSuggestionEndFor(startDate: string) {
+  const today = todayIso();
+  return startDate > today ? startDate : today;
 }
 
 function formatHours(hours: number) {
@@ -1114,6 +1125,20 @@ function hoursByProject(entries: Pick<SalesforceTimeEntry, "hours" | "projectLab
     projectLabel,
     hours: Number(hours.toFixed(2)),
   })).sort((a, b) => b.hours - a.hours || a.projectLabel.localeCompare(b.projectLabel));
+}
+
+function projectPieGradient(projectHours: { hours: number }[]) {
+  const total = projectHours.reduce((sum, project) => sum + project.hours, 0);
+  if (!total) return "conic-gradient(var(--panel-alt) 0 100%)";
+
+  let cursor = 0;
+  const segments = projectHours.map((project, index) => {
+    const start = cursor;
+    cursor += (project.hours / total) * 100;
+    return `${projectPieColors[index % projectPieColors.length]} ${start}% ${cursor}%`;
+  });
+
+  return `conic-gradient(${segments.join(", ")})`;
 }
 
 function nextSort<Key extends string>(current: SortConfig<Key>, key: Key): SortConfig<Key> {
@@ -1315,14 +1340,16 @@ function applyDefaultProjectToSuggestions(entries: TimeEntry[], defaultProject: 
 }
 
 export default function Home() {
+  const initialSuggestionStart = defaultSuggestionStartFor(salesforceRows);
   const [deliveryTeam, setDeliveryTeam] = useState<DeliveryTeam>(storedDeliveryTeam);
   const [availableProjects, setAvailableProjects] = useState(projectOptions);
   const [defaultProject, setDefaultProject] = useState<Project>(storedDefaultProject);
-  const [suggestionStart, setSuggestionStart] = useState(() => defaultSuggestionStartFor(salesforceRows));
-  const [suggestionEnd, setSuggestionEnd] = useState(defaultSuggestionEnd);
+  const [suggestionStart, setSuggestionStart] = useState(initialSuggestionStart);
+  const [suggestionEnd, setSuggestionEnd] = useState(() => defaultSuggestionEndFor(initialSuggestionStart));
   const [salesforceStart, setSalesforceStart] = useState(monthStart);
   const [salesforceEnd, setSalesforceEnd] = useState(monthEnd);
   const [suggestions, setSuggestions] = useState<TimeEntry[]>([]);
+  const [includeUnacceptedMeetings, setIncludeUnacceptedMeetings] = useState(false);
   const [liveSalesforceRows, setLiveSalesforceRows] = useState(salesforceRows);
   const [manualDraft, setManualDraft] = useState(blankEntry());
   const [salesforceSyncStatus, setSalesforceSyncStatus] = useState("Salesforce snapshot loaded");
@@ -1334,7 +1361,7 @@ export default function Home() {
   const [integrationMessage, setIntegrationMessage] = useState("Checking integrations...");
   const [appUpdateStatus, setAppUpdateStatus] = useState<AppUpdateStatus | null>(null);
   const [appUpdateMessage, setAppUpdateMessage] = useState("Checking app updates...");
-  const [projectSyncStatus, setProjectSyncStatus] = useState("Project list pending");
+  const [projectSyncStatus, setProjectSyncStatus] = useState("");
   const [isImporting, setIsImporting] = useState(false);
   const [isRefreshingCalendar, setIsRefreshingCalendar] = useState(false);
   const [isRefreshingProjects, setIsRefreshingProjects] = useState(false);
@@ -1408,8 +1435,10 @@ export default function Home() {
     const lastSalesforceDate = latestSalesforceDate(liveSalesforceRows);
     const weekStart = weekStartIso(defaultSuggestionEnd);
     const weekEnd = addDaysIso(weekStart, 6);
+    const dailySalesforceRows = liveSalesforceRows.filter((entry) => inRange(entry, defaultSuggestionEnd, defaultSuggestionEnd));
     const weeklySalesforceRows = liveSalesforceRows.filter((entry) => inRange(entry, weekStart, weekEnd));
     const monthlySalesforceRows = liveSalesforceRows.filter((entry) => inRange(entry, monthStart, monthEnd));
+    const todayLoggedHours = dailySalesforceRows.reduce((sum, entry) => sum + entry.hours, 0);
     const weekLoggedHours = weeklySalesforceRows.reduce((sum, entry) => sum + entry.hours, 0);
     const monthLoggedHours = monthlySalesforceRows.reduce((sum, entry) => sum + entry.hours, 0);
     const projectHours = hoursByProject(monthlySalesforceRows);
@@ -1419,13 +1448,14 @@ export default function Home() {
       salesforceHours,
       rowsToReview,
       lastSalesforceDate,
+      todayLoggedHours,
       weekLoggedHours,
       monthLoggedHours,
       projectHours,
     };
   }, [filteredSalesforceRows, filteredSuggestions, liveSalesforceRows]);
 
-  const largestProjectHours = totals.projectHours[0]?.hours ?? 0;
+  const pieGradient = projectPieGradient(totals.projectHours);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -1542,6 +1572,7 @@ export default function Home() {
           startDate,
           endDate,
           applyDefaultProjectToCalendarEvents(calendarBody.records, defaultProject),
+          includeUnacceptedMeetings,
         ),
       ]);
       if (calendarBody.lastSyncedAt || calendarBody.localFile) {
@@ -1562,7 +1593,7 @@ export default function Home() {
             : current,
         );
       }
-      setCalendarSyncStatus(calendarBody.warning ?? "Suggestions refreshed from local calendar file");
+      setCalendarSyncStatus(calendarBody.warning ?? "");
     } catch (error) {
       setCalendarSyncStatus(error instanceof Error ? error.message : "Suggestion refresh failed.");
     }
@@ -1643,9 +1674,9 @@ export default function Home() {
     }
   }
 
-  async function loadProjectOptions() {
+  async function loadProjectOptions(showStatus = false) {
     setIsRefreshingProjects(true);
-    setProjectSyncStatus(`Refreshing Salesforce projects for ${deliveryTeam}...`);
+    setProjectSyncStatus(showStatus ? `Refreshing Salesforce projects for ${deliveryTeam}...` : "");
     try {
       const response = await fetch(apiUrl(`/api/salesforce/projects?deliveryTeam=${deliveryTeam}`));
       const body = await response.json();
@@ -1653,7 +1684,11 @@ export default function Home() {
 
       const records = (body as ProjectResponse).records;
       setAvailableProjects(records);
-      setProjectSyncStatus(`Loaded ${records.length} Salesforce project${records.length === 1 ? "" : "s"} for ${deliveryTeam}.`);
+      setProjectSyncStatus(
+        showStatus
+          ? `Loaded ${records.length} Salesforce project${records.length === 1 ? "" : "s"} for ${deliveryTeam}.`
+          : "",
+      );
     } catch (error) {
       const fallbackProjects = projectOptions.filter(
         (project) =>
@@ -1706,9 +1741,11 @@ export default function Home() {
       setLiveSalesforceRows(records);
       if (!liveSalesforceDefaultApplied && !suggestionStartWasEdited) {
         const nextStart = defaultSuggestionStartFor(records);
+        const nextEnd = defaultSuggestionEndFor(nextStart);
         const manualEntries = suggestions.filter((entry) => entry.source === "Manual");
         setSuggestionStart(nextStart);
-        await loadCalendarSuggestionsForRange(nextStart, suggestionEnd, manualEntries);
+        setSuggestionEnd(nextEnd);
+        await loadCalendarSuggestionsForRange(nextStart, nextEnd, manualEntries);
         setLiveSalesforceDefaultApplied(true);
       }
       setSalesforceSyncStatus("Salesforce live");
@@ -1949,15 +1986,50 @@ export default function Home() {
         </div>
       </section>
 
-      <section className="metrics" aria-label="Time logging dashboard">
-        <div>
-          <span>Time Logged This Week</span>
-          <strong>{formatHours(totals.weekLoggedHours)}</strong>
+      <section className="dashboard-panel" aria-label="Dashboard">
+        <div className="dashboard-heading">
+          <h2>Dashboard</h2>
         </div>
-        <div>
-          <span>Time Logged This Month</span>
-          <strong>{formatHours(totals.monthLoggedHours)}</strong>
+        <div className="dashboard-grid">
+          <div className="dashboard-metrics">
+            <div>
+              <span>Time Logged Today</span>
+              <strong>{formatHours(totals.todayLoggedHours)}</strong>
+            </div>
+            <div>
+              <span>Time Logged This Week</span>
+              <strong>{formatHours(totals.weekLoggedHours)}</strong>
+            </div>
+            <div>
+              <span>Time Logged This Month</span>
+              <strong>{formatHours(totals.monthLoggedHours)}</strong>
+            </div>
+          </div>
+          <div className="project-pie-card">
+            <div className="dashboard-heading">
+              <h3>Hours This Month by Project</h3>
+            </div>
+            {totals.projectHours.length ? (
+              <div className="project-pie-layout">
+                <div className="project-pie" style={{ background: pieGradient }} aria-hidden="true" />
+                <div className="project-pie-legend">
+                  {totals.projectHours.map((project, index) => (
+                    <div className="project-pie-row" key={project.projectLabel}>
+                      <span style={{ background: projectPieColors[index % projectPieColors.length] }} />
+                      <p>{project.projectLabel}</p>
+                      <strong>{formatHours(project.hours)}</strong>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ) : (
+              <p className="empty-state">No Salesforce time entries found for this month.</p>
+            )}
+          </div>
         </div>
+      </section>
+
+      <section className="metrics review-metrics" aria-label="Review metrics">
         <div>
           <span>Latest Salesforce Entry</span>
           <strong>{totals.lastSalesforceDate}</strong>
@@ -1973,29 +2045,6 @@ export default function Home() {
         <div className={totals.rowsToReview ? "needs-review" : ""}>
           <span>Rows To Review</span>
           <strong>{totals.rowsToReview}</strong>
-        </div>
-      </section>
-
-      <section className="project-dashboard" aria-label="Hours this month by project">
-        <div className="dashboard-heading">
-          <h2>Hours This Month by Project</h2>
-        </div>
-        <div className="project-bars">
-          {totals.projectHours.length ? (
-            totals.projectHours.map((project) => (
-              <div className="project-bar" key={project.projectLabel}>
-                <div className="project-bar-label">
-                  <span>{project.projectLabel}</span>
-                  <strong>{formatHours(project.hours)}</strong>
-                </div>
-                <div className="project-bar-track">
-                  <span style={{ width: `${largestProjectHours ? (project.hours / largestProjectHours) * 100 : 0}%` }} />
-                </div>
-              </div>
-            ))
-          ) : (
-            <p className="empty-state">No Salesforce time entries found for this month.</p>
-          )}
         </div>
       </section>
 
@@ -2019,8 +2068,8 @@ export default function Home() {
               </details>
             </div>
             <div className="section-messages" aria-live="polite">
-              <p className={calendarStatusClass()}>{calendarSyncStatus}</p>
-              <p className="sync-status">{projectSyncStatus}</p>
+              {calendarSyncStatus ? <p className={calendarStatusClass()}>{calendarSyncStatus}</p> : null}
+              {projectSyncStatus ? <p className="sync-status">{projectSyncStatus}</p> : null}
               <p className={`calendar-file-state ${calendarFileState}`}>
                 {usesLocalCalendarFile
                   ? `Calendar file last synced: ${formatDateTime(calendarLastSyncedAt)}`
@@ -2067,8 +2116,10 @@ export default function Home() {
                 required
                 value={suggestionStart}
                 onChange={(event) => {
+                  const nextStart = event.target.value;
                   setSuggestionStartWasEdited(true);
-                  setSuggestionStart(event.target.value);
+                  setSuggestionStart(nextStart);
+                  if (nextStart > todayIso()) setSuggestionEnd(nextStart);
                 }}
               />
             </label>
@@ -2082,7 +2133,15 @@ export default function Home() {
               />
             </label>
           </div>
-          <button type="button" className="primary" onClick={loadProjectOptions} disabled={isRefreshingProjects}>
+          <label className="toggle-control">
+            <input
+              type="checkbox"
+              checked={includeUnacceptedMeetings}
+              onChange={(event) => setIncludeUnacceptedMeetings(event.target.checked)}
+            />
+            Include unaccepted meetings
+          </label>
+          <button type="button" className="primary" onClick={() => loadProjectOptions(true)} disabled={isRefreshingProjects}>
             {isRefreshingProjects ? "Refreshing Projects..." : "Refresh Projects"}
           </button>
           <button type="button" className="primary" onClick={copyCodexCalendarSyncPrompt}>

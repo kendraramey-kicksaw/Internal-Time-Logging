@@ -43,13 +43,15 @@ test("server-renders the calendar time-entry workspace", async () => {
   assert.match(html, /Check for Updates/);
   assert.match(html, /Update App/);
   assert.match(html, /Refresh Projects/);
-  assert.match(html, /Project list pending/);
+  assert.match(html, /Dashboard/);
+  assert.match(html, /Time Logged Today/);
   assert.match(html, /Sync Calendar with Codex/);
   assert.match(html, /Refresh Suggestions/);
   assert.match(html, /Calendar file last synced/);
   assert.match(html, /Calendar snapshot loaded/);
   assert.match(html, /Time Logged This Week/);
   assert.match(html, /Hours This Month by Project/);
+  assert.match(html, /Include unaccepted meetings/);
   assert.match(html, /Suggested entry rules/);
   assert.match(html, /Actions/);
   assert.match(html, /Add Entry/);
@@ -62,6 +64,7 @@ test("server-renders the calendar time-entry workspace", async () => {
   assert.doesNotMatch(html, /OOO is no longer suggested as time/);
   assert.doesNotMatch(html, /Project source/);
   assert.doesNotMatch(html, /Calendar Diagnostics/);
+  assert.doesNotMatch(html, /Project list pending/);
 });
 
 test("keeps the starter preview out of the production screen", async () => {

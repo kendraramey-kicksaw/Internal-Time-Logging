@@ -1,8 +1,7 @@
 import { execFile } from "node:child_process";
-import { existsSync, mkdirSync, readFileSync, statSync, unlinkSync, writeFileSync } from "node:fs";
+import { existsSync, readFileSync, statSync, unlinkSync } from "node:fs";
 import { createServer } from "node:http";
-import { dirname, resolve } from "node:path";
-import { createHash, randomUUID } from "node:crypto";
+import { resolve } from "node:path";
 import { promisify } from "node:util";
 
 const execFileAsync = promisify(execFile);
@@ -31,11 +30,6 @@ const port = Number(process.env.LOCAL_PROXY_PORT ?? DEFAULT_PORT);
 const orgAlias = process.env.SF_ORG_ALIAS ?? DEFAULT_ORG_ALIAS;
 const apiVersion = process.env.SALESFORCE_API_VERSION ?? DEFAULT_API_VERSION;
 const calendarFile = resolve(process.env.LOCAL_CALENDAR_EVENTS_FILE ?? ".local/calendar-events.json");
-const setupTelemetryFile = resolve(process.env.LOCAL_SETUP_TELEMETRY_FILE ?? ".local/setup-telemetry.json");
-const setupTelemetryDisabled = process.env.TIME_LOGGING_TELEMETRY_DISABLED === "1";
-const setupTelemetryEndpoint =
-  process.env.TIME_LOGGING_TELEMETRY_ENDPOINT ??
-  "https://calendar-time-entries.kicksaw.chatgpt.site/api/telemetry/setup";
 
 let cachedOrg = null;
 let cachedUserId = null;
@@ -65,14 +59,6 @@ const server = createServer(async (request, response) => {
 
     if (url.pathname === "/api/app/update" && request.method === "POST") {
       return sendJson(response, 200, await updateApp());
-    }
-
-    if (url.pathname === "/api/telemetry/setup" && request.method === "POST") {
-      return sendJson(response, 200, await setupTelemetry());
-    }
-
-    if (url.pathname === "/api/telemetry/setup-summary" && request.method === "GET") {
-      return sendJson(response, 200, await setupTelemetrySummary());
     }
 
     if (url.pathname === "/api/calendar/events" && request.method === "GET") {
@@ -187,124 +173,6 @@ async function updateApp() {
     ...(await gitUpdateStatus()),
     local: true,
     message: "Update installed. Restart the local proxy and dev server if the app does not refresh automatically.",
-  };
-}
-
-async function setupTelemetry() {
-  const install = localSetupInstall();
-  const org = await getSalesforceOrg().catch(() => null);
-  const username = typeof org?.username === "string" ? org.username.trim().toLowerCase() : "";
-  const payload = {
-    installId: install.installId,
-    installedAt: install.createdAt,
-    appVersion: await gitText(["rev-parse", "--short", "HEAD"]).catch(() => "unknown"),
-    source: "local-cli",
-    localMode: true,
-    userHash: username ? sha256Hex(username) : null,
-    emailDomain: username.includes("@") ? username.split("@").at(-1) : null,
-  };
-
-  if (setupTelemetryDisabled || !setupTelemetryEndpoint) {
-    return {
-      enabled: false,
-      tracked: false,
-      central: false,
-      installId: install.installId,
-      message: "Setup tracking is disabled for this local app.",
-      summary: localSetupSummary(install),
-    };
-  }
-
-  try {
-    const response = await fetch(setupTelemetryEndpoint, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(payload),
-    });
-    const body = await response.json().catch(() => ({}));
-    if (!response.ok) throw new Error(body.error ?? "Hosted setup tracking endpoint rejected the check-in.");
-
-    return {
-      enabled: true,
-      tracked: true,
-      central: true,
-      installId: install.installId,
-      message: body.message ?? "Anonymous setup check-in recorded.",
-      summary: body.summary ?? localSetupSummary(install),
-    };
-  } catch (error) {
-    return {
-      enabled: true,
-      tracked: true,
-      central: false,
-      installId: install.installId,
-      message: error instanceof Error ? error.message : "Setup check-in recorded locally only.",
-      summary: localSetupSummary(install),
-    };
-  }
-}
-
-async function setupTelemetrySummary() {
-  if (setupTelemetryDisabled || !setupTelemetryEndpoint) {
-    return {
-      enabled: false,
-      central: false,
-      message: "Setup tracking is disabled for this local app.",
-      summary: localSetupSummary(localSetupInstall()),
-    };
-  }
-
-  try {
-    const summaryUrl = setupTelemetryEndpoint.replace(/\/setup$/, "/setup-summary");
-    const response = await fetch(summaryUrl);
-    const body = await response.json().catch(() => ({}));
-    if (!response.ok) throw new Error(body.error ?? "Hosted setup tracking summary is unavailable.");
-
-    return {
-      enabled: true,
-      central: true,
-      message: body.message ?? "Setup tracking summary loaded.",
-      summary: body.summary,
-    };
-  } catch (error) {
-    return {
-      enabled: true,
-      central: false,
-      message: error instanceof Error ? error.message : "Using local setup tracking only.",
-      summary: localSetupSummary(localSetupInstall()),
-    };
-  }
-}
-
-function localSetupInstall() {
-  if (existsSync(setupTelemetryFile)) {
-    try {
-      const parsed = JSON.parse(readFileSync(setupTelemetryFile, "utf8"));
-      if (typeof parsed.installId === "string" && parsed.installId.length >= 8) {
-        return parsed;
-      }
-    } catch {
-      // Replace invalid local telemetry metadata below.
-    }
-  }
-
-  const now = new Date().toISOString();
-  const install = {
-    installId: randomUUID(),
-    createdAt: now,
-  };
-  mkdirSync(dirname(setupTelemetryFile), { recursive: true });
-  writeFileSync(setupTelemetryFile, JSON.stringify(install, null, 2));
-  return install;
-}
-
-function localSetupSummary(install) {
-  return {
-    uniqueDevices: 1,
-    uniqueUsers: null,
-    checkins: null,
-    firstSeenAt: install.createdAt ?? null,
-    lastSeenAt: null,
   };
 }
 
@@ -741,10 +609,6 @@ function safeDate(value) {
 
 function escapeSoql(value) {
   return String(value).replace(/\\/g, "\\\\").replace(/'/g, "\\'");
-}
-
-function sha256Hex(value) {
-  return createHash("sha256").update(value).digest("hex");
 }
 
 function sendEmpty(response, status) {
