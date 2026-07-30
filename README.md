@@ -61,22 +61,26 @@ the localhost link will stop working and the services need to be started again.
   user adds a new calendar event, Codex must sync the calendar file again first.
 - The `Refresh Salesforce` and `Refresh Projects` buttons reread live Salesforce
   data through the local proxy.
-- Setup adoption is tracked separately from the app UI using GitHub repository
-  traffic and optional Codex daily checks.
+- Setup adoption is tracked separately from the app UI using anonymous setup
+  attempt comments in GitHub.
 
 ## Setup Tracking Outside The App
 
-Setup tracking is not shown in the app. The simplest separate metric is GitHub
-traffic for the public repository:
+Setup tracking is not shown in the app. It uses a backend-only GitHub issue
+comment created by the setup script:
 
-- GitHub unique cloners is the closest low-friction estimate of unique setup
-  attempts for the public repo.
-- GitHub clone traffic is not exact app usage. It counts repo clones, not
-  successful Salesforce/Calendar setup.
-- GitHub traffic does not collect calendar event details, Salesforce time
-  entries, project names, notes, access tokens, or Salesforce usernames.
-- Codex can run a daily check against GitHub traffic and notify Kendra only when
-  the unique clone count changes.
+```bash
+npm run track:setup
+```
+
+- The tracker posts one anonymous setup-attempt marker per local checkout when
+  GitHub CLI authentication or a GitHub token is available.
+- The marker includes only an anonymous install id hash, timestamp, platform,
+  repository, and app version.
+- The tracker does not collect calendar event details, Salesforce time entries,
+  project names, notes, access tokens, raw usernames, or Salesforce usernames.
+- If GitHub authentication is unavailable, setup continues and tracking is
+  skipped.
 
 ## Salesforce Auth
 

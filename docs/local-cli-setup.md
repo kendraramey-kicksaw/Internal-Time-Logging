@@ -44,19 +44,28 @@ technical reference.
    npm install
    ```
 
-7. Start the local Salesforce proxy in one terminal:
+7. Record the anonymous setup attempt if GitHub authentication is available:
+
+   ```bash
+   npm run track:setup
+   ```
+
+   This step is outside the app UI and does not block setup if tracking is
+   skipped.
+
+8. Start the local Salesforce proxy in one terminal:
 
    ```bash
    npm run local:proxy
    ```
 
-8. Start the app in another terminal:
+9. Start the app in another terminal:
 
    ```bash
    npm run dev -- --port 3001
    ```
 
-9. Open the local app:
+10. Open the local app:
 
    ```text
    http://localhost:3001
@@ -67,17 +76,18 @@ the app or Salesforce connection will stop working.
 
 ## Setup Tracking
 
-Setup tracking is separate from the app UI. Use GitHub repository traffic as the
-closest low-friction estimate of unique setup attempts:
+Setup tracking is separate from the app UI. It posts one anonymous setup-attempt
+comment to the repo's setup tracking issue when GitHub CLI authentication or a
+GitHub token is available:
 
 ```bash
-gh api repos/kendraramey-kicksaw/Internal-Time-Logging/traffic/clones
+npm run track:setup
 ```
 
-The `uniques` value is the current unique cloner estimate for the available
-GitHub traffic window. It is not exact app usage, but it avoids collecting
-calendar event details, Salesforce time entries, project names, notes, access
-tokens, or Salesforce usernames.
+The marker includes only an anonymous install id hash, timestamp, platform,
+repository, and app version. It does not collect calendar event details,
+Salesforce time entries, project names, notes, access tokens, raw usernames, or
+Salesforce usernames.
 
 ## Calendar Sync Prompt
 

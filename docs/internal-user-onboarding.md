@@ -17,12 +17,15 @@ their own Salesforce CLI login and their own Codex Google Calendar connection.
 
 ## Privacy And Setup Tracking
 
-Setup tracking is separate from the app UI. Kendra can use GitHub repository
-traffic as the closest low-friction estimate of unique setup attempts.
+Setup tracking is separate from the app UI. The setup script can post one
+anonymous setup-attempt marker to GitHub when GitHub CLI authentication or a
+GitHub token is available.
 
-GitHub unique cloners counts repo clones, not successful app usage. It does not
-collect calendar event details, Salesforce time entries, project names, notes,
-access tokens, or Salesforce usernames.
+The marker includes only an anonymous install id hash, timestamp, platform,
+repository, and app version. It does not collect calendar event details,
+Salesforce time entries, project names, notes, access tokens, raw usernames, or
+Salesforce usernames. If GitHub authentication is unavailable, setup continues
+and tracking is skipped.
 
 ## Public Repo
 
@@ -73,12 +76,13 @@ sf org display --target-org KicksawProd
 
 After Salesforce auth succeeds:
 1. Run npm install.
-2. Start the local Salesforce proxy with npm run local:proxy.
-3. Start the app with npm run dev -- --port 3001.
-4. If port 3001 is unavailable, use the port printed by the app and tell me the exact local URL.
-5. Keep the local services running while I validate.
+2. Run npm run track:setup. This is outside the app UI and should only send the anonymous setup-attempt marker described in the docs. If GitHub authentication is unavailable, continue setup.
+3. Start the local Salesforce proxy with npm run local:proxy.
+4. Start the app with npm run dev -- --port 3001.
+5. If port 3001 is unavailable, use the port printed by the app and tell me the exact local URL.
+6. Keep the local services running while I validate.
 
-Setup tracking is separate from the app UI and should use GitHub traffic or a Codex daily check. Do not send calendar event details, Salesforce records, project names, notes, access tokens, or raw usernames as tracking data.
+Setup tracking is separate from the app UI. Do not send calendar event details, Salesforce records, project names, notes, access tokens, raw usernames, or Salesforce usernames as tracking data.
 
 Then help me configure the app:
 1. Have me select my Delivery Team: AOD, SOPS, COPS, MOPS, or Engineering.
