@@ -65,6 +65,31 @@ technical reference.
 Keep both local processes running while using the app. If either process stops,
 the app or Salesforce connection will stop working.
 
+## Setup Tracking
+
+The app sends an anonymous setup check-in when it loads so Kendra can estimate
+how many unique devices/users have set it up.
+
+The local proxy creates `.local/setup-telemetry.json` with a random install id.
+When Salesforce CLI is connected, it also sends a hashed Salesforce username and
+the email domain. The hosted app stores app version, source, first seen, last
+seen, and check-in count.
+
+Setup tracking does not send calendar event details, Salesforce time entries,
+project names, notes, access tokens, or raw Salesforce usernames.
+
+To disable setup tracking locally:
+
+```bash
+TIME_LOGGING_TELEMETRY_DISABLED=1 npm run local:proxy
+```
+
+To use a different tracking endpoint:
+
+```bash
+TIME_LOGGING_TELEMETRY_ENDPOINT=https://example.com/api/telemetry/setup npm run local:proxy
+```
+
 ## Calendar Sync Prompt
 
 Make sure Google Calendar is connected in Codex, then ask Codex to write the

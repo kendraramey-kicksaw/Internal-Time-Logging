@@ -15,6 +15,22 @@ their own Salesforce CLI login and their own Codex Google Calendar connection.
 - Access to the Kicksaw Salesforce org.
 - Codex connected to your Kicksaw Google Calendar.
 
+## Privacy And Setup Tracking
+
+The app sends an anonymous setup check-in when it loads so Kendra can estimate
+how many unique devices/users have set it up.
+
+The check-in stores a random local install id, a hashed Salesforce username when
+Salesforce CLI is connected, the email domain, app version, first seen, last
+seen, and check-in count. It does not store calendar event details, Salesforce
+time entries, project names, notes, access tokens, or raw Salesforce usernames.
+
+To opt out locally, start the proxy with:
+
+```bash
+TIME_LOGGING_TELEMETRY_DISABLED=1 npm run local:proxy
+```
+
 ## Public Repo
 
 Open or clone:
@@ -68,6 +84,8 @@ After Salesforce auth succeeds:
 3. Start the app with npm run dev -- --port 3001.
 4. If port 3001 is unavailable, use the port printed by the app and tell me the exact local URL.
 5. Keep the local services running while I validate.
+
+The app includes anonymous setup tracking. Do not send calendar event details, Salesforce records, project names, notes, access tokens, or raw usernames as tracking data. If I ask to opt out, start the proxy with TIME_LOGGING_TELEMETRY_DISABLED=1 npm run local:proxy.
 
 Then help me configure the app:
 1. Have me select my Delivery Team: AOD, SOPS, COPS, MOPS, or Engineering.
@@ -166,4 +184,6 @@ Kicksaw internal time tracking, where it is false and locked.
   fill missing required fields, and import again.
 - If `Update App` reports local changes, ask Codex to inspect the changes before
   updating. The update button is safest when the local repo is clean.
+- If setup tracking says local only, the app still works. It means the hosted
+  tracking endpoint was not reachable from the local proxy.
 - Personal calendar data lives under `.local/` and is ignored by Git.

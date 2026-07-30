@@ -61,6 +61,32 @@ the localhost link will stop working and the services need to be started again.
   user adds a new calendar event, Codex must sync the calendar file again first.
 - The `Refresh Salesforce` and `Refresh Projects` buttons reread live Salesforce
   data through the local proxy.
+- The app sends an anonymous setup check-in when it loads so Kendra can estimate
+  unique devices/users using the app.
+
+## Setup Tracking
+
+Setup tracking is intentionally minimal. It stores:
+
+- A random local install id from `.local/setup-telemetry.json`.
+- A hashed Salesforce username when Salesforce CLI is connected.
+- The user's email domain, such as `kicksaw.com`.
+- App version, source, first seen, last seen, and check-in count.
+
+It does not store calendar event details, Salesforce time entries, project names,
+notes, access tokens, or raw Salesforce usernames.
+
+To disable setup tracking locally:
+
+```bash
+TIME_LOGGING_TELEMETRY_DISABLED=1 npm run local:proxy
+```
+
+To send setup check-ins somewhere other than the default hosted endpoint:
+
+```bash
+TIME_LOGGING_TELEMETRY_ENDPOINT=https://example.com/api/telemetry/setup npm run local:proxy
+```
 
 ## Salesforce Auth
 

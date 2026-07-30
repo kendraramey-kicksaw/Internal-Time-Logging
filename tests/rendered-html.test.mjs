@@ -49,6 +49,7 @@ test("server-renders the calendar time-entry workspace", async () => {
   assert.match(html, /Calendar file last synced/);
   assert.match(html, /Calendar snapshot loaded/);
   assert.match(html, /Time Logged This Week/);
+  assert.match(html, /App Setups/);
   assert.match(html, /Hours This Month by Project/);
   assert.match(html, /Suggested entry rules/);
   assert.match(html, /Actions/);
@@ -83,6 +84,8 @@ test("keeps the starter preview out of the production screen", async () => {
   assert.match(page, /manualStatus/);
   assert.match(page, /apiUrl/);
   assert.match(page, /127\.0\.0\.1:8789/);
+  assert.match(worker, /setup_installations/);
+  assert.match(proxy, /setup-telemetry\.json/);
   assert.match(worker, /oauth_connections/);
   assert.match(worker, /\/api\/oauth\/start/);
   assert.match(worker, /GOOGLE_CALENDAR_ACCESS_TOKEN/);

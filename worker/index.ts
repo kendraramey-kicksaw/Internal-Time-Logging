@@ -166,6 +166,15 @@ type SalesforceConnection = {
   ownerId: string;
 };
 
+type SetupTelemetryPayload = {
+  installId?: unknown;
+  appVersion?: unknown;
+  source?: unknown;
+  localMode?: unknown;
+  userHash?: unknown;
+  emailDomain?: unknown;
+};
+
 // Image security config. SVG sources with .svg extension auto-skip the
 // optimization endpoint on the client side (served directly, no proxy).
 // To route SVGs through the optimizer (with security headers), set
@@ -217,6 +226,16 @@ const worker = {
       if (request.method === "POST") {
         return jsonResponse({ error: "Hosted app updates must be deployed from the GitHub repo." }, 400);
       }
+      return jsonResponse({ error: "Method not allowed" }, 405);
+    }
+
+    if (url.pathname === "/api/telemetry/setup") {
+      if (request.method === "POST") return recordSetupTelemetry(request, env);
+      return jsonResponse({ error: "Method not allowed" }, 405);
+    }
+
+    if (url.pathname === "/api/telemetry/setup-summary") {
+      if (request.method === "GET") return getSetupTelemetrySummary(env);
       return jsonResponse({ error: "Method not allowed" }, 405);
     }
 
@@ -406,6 +425,72 @@ async function getSalesforceProjects(request: Request, env?: Env): Promise<Respo
   const date = safeDate(url.searchParams.get("date"));
   const projects = await querySalesforceProjects(connection, deliveryTeam, date);
   return jsonResponse({ records: projects });
+}
+
+async function recordSetupTelemetry(request: Request, env?: Env): Promise<Response> {
+  if (!env?.DB) return jsonResponse({ error: "Setup tracking storage is not configured." }, 503);
+
+  let body: SetupTelemetryPayload;
+  try {
+    body = await request.json() as SetupTelemetryPayload;
+  } catch {
+    return jsonResponse({ error: "Request body must be valid JSON." }, 400);
+  }
+
+  const installId = safeTelemetryId(body.installId);
+  if (!installId) return jsonResponse({ error: "installId is required." }, 400);
+
+  const user = authenticatedUser(request);
+  const userHash =
+    safeHash(body.userHash) ??
+    (user?.email ? await sha256Hex(user.email.trim().toLowerCase()) : null);
+  const emailDomain = safeDomain(body.emailDomain) ?? (user?.email.includes("@") ? user.email.split("@").at(-1) ?? null : null);
+  const now = new Date().toISOString();
+
+  await ensureSetupTelemetrySchema(env);
+  await env.DB.prepare(
+    [
+      "INSERT INTO setup_installations",
+      "(install_id, user_hash, email_domain, app_version, source, local_mode, first_seen_at, last_seen_at, checkin_count, user_agent)",
+      "VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1, ?)",
+      "ON CONFLICT(install_id) DO UPDATE SET",
+      "user_hash = COALESCE(excluded.user_hash, setup_installations.user_hash),",
+      "email_domain = COALESCE(excluded.email_domain, setup_installations.email_domain),",
+      "app_version = excluded.app_version,",
+      "source = excluded.source,",
+      "local_mode = excluded.local_mode,",
+      "last_seen_at = excluded.last_seen_at,",
+      "checkin_count = setup_installations.checkin_count + 1,",
+      "user_agent = excluded.user_agent",
+    ].join(" "),
+  )
+    .bind(
+      installId,
+      userHash,
+      emailDomain,
+      limitedString(body.appVersion, 80) ?? "unknown",
+      limitedString(body.source, 40) ?? "unknown",
+      body.localMode === false ? 0 : 1,
+      now,
+      now,
+      limitedString(request.headers.get("user-agent"), 240),
+    )
+    .run();
+
+  return jsonResponse({
+    ok: true,
+    message: "Anonymous setup check-in recorded.",
+    summary: await setupTelemetrySummary(env),
+  });
+}
+
+async function getSetupTelemetrySummary(env?: Env): Promise<Response> {
+  if (!env?.DB) return jsonResponse({ error: "Setup tracking storage is not configured." }, 503);
+
+  await ensureSetupTelemetrySchema(env);
+  return jsonResponse({
+    summary: await setupTelemetrySummary(env),
+  });
 }
 
 async function getIntegrationStatus(request: Request, env?: Env): Promise<Response> {
@@ -692,6 +777,59 @@ async function ensureOAuthSchema(env?: Env) {
   ]);
 }
 
+async function ensureSetupTelemetrySchema(env?: Env) {
+  if (!env?.DB) return;
+
+  await env.DB.batch([
+    env.DB.prepare(
+      [
+        "CREATE TABLE IF NOT EXISTS setup_installations (",
+        "install_id text PRIMARY KEY,",
+        "user_hash text,",
+        "email_domain text,",
+        "app_version text,",
+        "source text,",
+        "local_mode integer NOT NULL DEFAULT 1,",
+        "first_seen_at text NOT NULL,",
+        "last_seen_at text NOT NULL,",
+        "checkin_count integer NOT NULL DEFAULT 1,",
+        "user_agent text",
+        ")",
+      ].join(" "),
+    ),
+    env.DB.prepare("CREATE INDEX IF NOT EXISTS setup_installations_user_hash_idx ON setup_installations (user_hash)"),
+    env.DB.prepare("CREATE INDEX IF NOT EXISTS setup_installations_last_seen_idx ON setup_installations (last_seen_at)"),
+  ]);
+}
+
+async function setupTelemetrySummary(env: Env) {
+  const row = await env.DB.prepare(
+    [
+      "SELECT",
+      "COUNT(*) AS unique_devices,",
+      "COUNT(DISTINCT user_hash) AS unique_users,",
+      "COALESCE(SUM(checkin_count), 0) AS checkins,",
+      "MIN(first_seen_at) AS first_seen_at,",
+      "MAX(last_seen_at) AS last_seen_at",
+      "FROM setup_installations",
+    ].join(" "),
+  ).first<{
+    unique_devices: number;
+    unique_users: number;
+    checkins: number;
+    first_seen_at: string | null;
+    last_seen_at: string | null;
+  }>();
+
+  return {
+    uniqueDevices: Number(row?.unique_devices ?? 0),
+    uniqueUsers: Number(row?.unique_users ?? 0),
+    checkins: Number(row?.checkins ?? 0),
+    firstSeenAt: row?.first_seen_at ?? null,
+    lastSeenAt: row?.last_seen_at ?? null,
+  };
+}
+
 async function exchangeGoogleCode(env: Env | undefined, code: string, redirectUri: string) {
   return tokenRequest("https://oauth2.googleapis.com/token", {
     client_id: env?.GOOGLE_CLIENT_ID ?? "",
@@ -879,6 +1017,35 @@ function timingSafeEqual(left: string, right: string) {
     result |= left.charCodeAt(index) ^ right.charCodeAt(index);
   }
   return result === 0;
+}
+
+async function sha256Hex(value: string) {
+  const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(value));
+  return Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, "0")).join("");
+}
+
+function safeTelemetryId(value: unknown) {
+  if (typeof value !== "string") return null;
+  const trimmed = value.trim();
+  return /^[a-zA-Z0-9_-]{8,80}$/.test(trimmed) ? trimmed : null;
+}
+
+function safeHash(value: unknown) {
+  if (typeof value !== "string") return null;
+  const trimmed = value.trim().toLowerCase();
+  return /^[a-f0-9]{64}$/.test(trimmed) ? trimmed : null;
+}
+
+function safeDomain(value: unknown) {
+  if (typeof value !== "string") return null;
+  const trimmed = normalizeDomain(value);
+  return /^[a-z0-9.-]{3,120}$/.test(trimmed) ? trimmed : null;
+}
+
+function limitedString(value: unknown, maxLength: number) {
+  if (typeof value !== "string") return null;
+  const trimmed = value.trim();
+  return trimmed ? trimmed.slice(0, maxLength) : null;
 }
 
 function base64UrlEncode(value: string) {

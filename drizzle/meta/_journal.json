@@ -8,6 +8,13 @@
       "when": 1784818104092,
       "tag": "0000_tiny_shadow_king",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "6",
+      "when": 1785413752499,
+      "tag": "0001_pink_hitman",
+      "breakpoints": true
     }
   ]
 }
