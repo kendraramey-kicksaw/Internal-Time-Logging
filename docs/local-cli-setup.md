@@ -67,28 +67,17 @@ the app or Salesforce connection will stop working.
 
 ## Setup Tracking
 
-The app sends an anonymous setup check-in when it loads so Kendra can estimate
-how many unique devices/users have set it up.
-
-The local proxy creates `.local/setup-telemetry.json` with a random install id.
-When Salesforce CLI is connected, it also sends a hashed Salesforce username and
-the email domain. The hosted app stores app version, source, first seen, last
-seen, and check-in count.
-
-Setup tracking does not send calendar event details, Salesforce time entries,
-project names, notes, access tokens, or raw Salesforce usernames.
-
-To disable setup tracking locally:
+Setup tracking is separate from the app UI. Use GitHub repository traffic as the
+closest low-friction estimate of unique setup attempts:
 
 ```bash
-TIME_LOGGING_TELEMETRY_DISABLED=1 npm run local:proxy
+gh api repos/kendraramey-kicksaw/Internal-Time-Logging/traffic/clones
 ```
 
-To use a different tracking endpoint:
-
-```bash
-TIME_LOGGING_TELEMETRY_ENDPOINT=https://example.com/api/telemetry/setup npm run local:proxy
-```
+The `uniques` value is the current unique cloner estimate for the available
+GitHub traffic window. It is not exact app usage, but it avoids collecting
+calendar event details, Salesforce time entries, project names, notes, access
+tokens, or Salesforce usernames.
 
 ## Calendar Sync Prompt
 

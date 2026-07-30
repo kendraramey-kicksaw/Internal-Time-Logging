@@ -17,19 +17,12 @@ their own Salesforce CLI login and their own Codex Google Calendar connection.
 
 ## Privacy And Setup Tracking
 
-The app sends an anonymous setup check-in when it loads so Kendra can estimate
-how many unique devices/users have set it up.
+Setup tracking is separate from the app UI. Kendra can use GitHub repository
+traffic as the closest low-friction estimate of unique setup attempts.
 
-The check-in stores a random local install id, a hashed Salesforce username when
-Salesforce CLI is connected, the email domain, app version, first seen, last
-seen, and check-in count. It does not store calendar event details, Salesforce
-time entries, project names, notes, access tokens, or raw Salesforce usernames.
-
-To opt out locally, start the proxy with:
-
-```bash
-TIME_LOGGING_TELEMETRY_DISABLED=1 npm run local:proxy
-```
+GitHub unique cloners counts repo clones, not successful app usage. It does not
+collect calendar event details, Salesforce time entries, project names, notes,
+access tokens, or Salesforce usernames.
 
 ## Public Repo
 
@@ -85,7 +78,7 @@ After Salesforce auth succeeds:
 4. If port 3001 is unavailable, use the port printed by the app and tell me the exact local URL.
 5. Keep the local services running while I validate.
 
-The app includes anonymous setup tracking. Do not send calendar event details, Salesforce records, project names, notes, access tokens, or raw usernames as tracking data. If I ask to opt out, start the proxy with TIME_LOGGING_TELEMETRY_DISABLED=1 npm run local:proxy.
+Setup tracking is separate from the app UI and should use GitHub traffic or a Codex daily check. Do not send calendar event details, Salesforce records, project names, notes, access tokens, or raw usernames as tracking data.
 
 Then help me configure the app:
 1. Have me select my Delivery Team: AOD, SOPS, COPS, MOPS, or Engineering.
@@ -184,6 +177,4 @@ Kicksaw internal time tracking, where it is false and locked.
   fill missing required fields, and import again.
 - If `Update App` reports local changes, ask Codex to inspect the changes before
   updating. The update button is safest when the local repo is clean.
-- If setup tracking says local only, the app still works. It means the hosted
-  tracking endpoint was not reachable from the local proxy.
 - Personal calendar data lives under `.local/` and is ignored by Git.

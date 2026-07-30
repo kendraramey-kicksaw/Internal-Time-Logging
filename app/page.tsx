@@ -95,22 +95,6 @@ type IntegrationStatusResponse = {
   };
 };
 
-type SetupTrackingSummary = {
-  uniqueDevices: number;
-  uniqueUsers: number | null;
-  checkins: number | null;
-  firstSeenAt: string | null;
-  lastSeenAt: string | null;
-};
-
-type SetupTrackingResponse = {
-  enabled?: boolean;
-  tracked?: boolean;
-  central?: boolean;
-  message?: string;
-  summary?: SetupTrackingSummary;
-};
-
 type CalendarEvent = {
   id: string;
   title: string;
@@ -976,11 +960,6 @@ function formatHours(hours: number) {
   }).format(hours);
 }
 
-function formatSetupCount(summary?: SetupTrackingSummary) {
-  if (!summary) return "-";
-  return new Intl.NumberFormat("en-US").format(summary.uniqueDevices);
-}
-
 function formatDateTime(value?: string | null) {
   if (!value) return "Not synced yet";
   return new Intl.DateTimeFormat("en-US", {
@@ -1097,16 +1076,6 @@ function apiUrl(path: string) {
   }
 
   return path;
-}
-
-function setupInstallId() {
-  const storageKey = "timeLogging.installId";
-  const existing = window.localStorage.getItem(storageKey);
-  if (existing) return existing;
-
-  const nextId = crypto.randomUUID();
-  window.localStorage.setItem(storageKey, nextId);
-  return nextId;
 }
 
 function compareValues(left: string | number | boolean, right: string | number | boolean) {
@@ -1363,8 +1332,6 @@ export default function Home() {
   const [manualStatus, setManualStatus] = useState("");
   const [integrationStatus, setIntegrationStatus] = useState<IntegrationStatusResponse | null>(null);
   const [integrationMessage, setIntegrationMessage] = useState("Checking integrations...");
-  const [setupTracking, setSetupTracking] = useState<SetupTrackingResponse | null>(null);
-  const [setupTrackingMessage, setSetupTrackingMessage] = useState("Checking setup tracking...");
   const [appUpdateStatus, setAppUpdateStatus] = useState<AppUpdateStatus | null>(null);
   const [appUpdateMessage, setAppUpdateMessage] = useState("Checking app updates...");
   const [projectSyncStatus, setProjectSyncStatus] = useState("Project list pending");
@@ -1468,7 +1435,6 @@ export default function Home() {
 
   useEffect(() => {
     loadIntegrationStatus();
-    loadSetupTracking();
     loadAppUpdateStatus();
     const url = new URL(window.location.href);
     const message = url.searchParams.get("message");
@@ -1639,33 +1605,6 @@ export default function Home() {
       setIntegrationMessage("Integration status loaded.");
     } catch (error) {
       setIntegrationMessage(error instanceof Error ? error.message : "Integration status failed.");
-    }
-  }
-
-  async function loadSetupTracking() {
-    try {
-      const response = await fetch(apiUrl("/api/telemetry/setup"), {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          installId: setupInstallId(),
-          source: "app-load",
-          localMode:
-            window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1",
-        }),
-      });
-      const body = await response.json();
-      if (!response.ok) throw new Error(body.error ?? "Setup tracking failed.");
-
-      const telemetry = body as SetupTrackingResponse;
-      setSetupTracking(telemetry);
-      setSetupTrackingMessage(
-        telemetry.central
-          ? "Setup tracking live"
-          : telemetry.message ?? "Setup tracking local only",
-      );
-    } catch (error) {
-      setSetupTrackingMessage(error instanceof Error ? error.message : "Setup tracking unavailable.");
     }
   }
 
@@ -2034,11 +1973,6 @@ export default function Home() {
         <div className={totals.rowsToReview ? "needs-review" : ""}>
           <span>Rows To Review</span>
           <strong>{totals.rowsToReview}</strong>
-        </div>
-        <div>
-          <span>App Setups</span>
-          <strong>{formatSetupCount(setupTracking?.summary)}</strong>
-          <small className={setupTracking?.central ? "metric-note live" : "metric-note"}>{setupTrackingMessage}</small>
         </div>
       </section>
 

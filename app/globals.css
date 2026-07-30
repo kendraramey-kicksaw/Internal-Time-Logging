@@ -351,16 +351,6 @@ h2 {
   line-height: 1;
 }
 
-.metric-note {
-  color: var(--muted);
-  font-size: 0.72rem;
-  font-weight: 800;
-}
-
-.metric-note.live {
-  color: var(--accent-strong);
-}
-
 .metrics .needs-review {
   border-color: var(--warning-line);
   background: var(--warning-bg);
