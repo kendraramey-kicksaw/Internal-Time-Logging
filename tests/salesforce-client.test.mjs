@@ -17,6 +17,13 @@ function jsonResult(body) {
   return { stdout: JSON.stringify(body), stderr: "" };
 }
 
+function commandError(message, { stdout = "", stderr = "" } = {}) {
+  const error = new Error(message);
+  error.stdout = stdout;
+  error.stderr = stderr;
+  return error;
+}
+
 test("shares one concurrent CLI lookup and caches only connection fields", async () => {
   const calls = [];
   const client = createSalesforceClient({
@@ -74,6 +81,48 @@ test("rejects a token returned with the CLI stale-token warning", async () => {
   });
 
   await assert.rejects(client.getOrg(), /Salesforce CLI org test-org could not refresh its access token\./);
+});
+
+test("falls back to org display token when installed sf CLI lacks show-access-token", async () => {
+  const client = createSalesforceClient({
+    orgAlias: "test-org",
+    execute: async (_command, args) => {
+      if (args[1] === "display") {
+        return jsonResult({
+          status: 0,
+          result: {
+            accessToken: "display-token",
+            instanceUrl: "https://example.my.salesforce.com",
+            username: "user@example.com",
+          },
+        });
+      }
+      throw commandError("Command failed", {
+        stderr: "Warning: org auth show-access-token is not a sf command.",
+      });
+    },
+  });
+
+  assert.deepEqual(await client.getOrg(), {
+    accessToken: "display-token",
+    instanceUrl: "https://example.my.salesforce.com",
+    username: "user@example.com",
+  });
+});
+
+test("does not use redacted org display token as a fallback", async () => {
+  const client = createSalesforceClient({
+    orgAlias: "test-org",
+    logger: { warn() {} },
+    execute: async (_command, args) => {
+      if (args[1] === "display") return jsonResult(ORG);
+      throw commandError("Command failed", {
+        stderr: "Warning: org auth show-access-token is not a sf command.",
+      });
+    },
+  });
+
+  await assert.rejects(client.getOrg(), /Salesforce CLI org test-org is not authenticated\./);
 });
 
 test("clears credentials after a 401 and retries once with a refreshed token", async () => {

@@ -34,21 +34,22 @@ export function createSalesforceClient({
 
   async function loadOrg() {
     let orgResult;
-    let tokenResult;
+    let tokenResult = null;
     try {
-      [orgResult, tokenResult] = await Promise.all([
-        sfJson(["org", "display", "--target-org", orgAlias, "--json"]),
-        sfJson(["org", "auth", "show-access-token", "--target-org", orgAlias, "--json"]),
-      ]);
+      orgResult = await sfJson(["org", "display", "--target-org", orgAlias, "--json"]);
+      tokenResult = await sfJson(["org", "auth", "show-access-token", "--target-org", orgAlias, "--json"]).catch((error) => {
+        if (isUnknownShowAccessTokenCommand(error)) return null;
+        throw error;
+      });
     } catch {
       throw authenticationError();
     }
 
-    if (hasStaleTokenWarning(tokenResult.warnings)) {
+    if (hasStaleTokenWarning(tokenResult?.warnings)) {
       throw new Error(`Salesforce CLI org ${orgAlias} could not refresh its access token. Run: sf org login web --alias ${orgAlias}.`);
     }
 
-    const accessToken = tokenResult.result?.accessToken;
+    const accessToken = tokenResult?.result?.accessToken ?? displayAccessToken(orgResult.result?.accessToken);
     const instanceUrl = orgResult.result?.instanceUrl;
     const username = orgResult.result?.username;
     if (!accessToken || !instanceUrl || !username) throw authenticationError();
@@ -57,13 +58,18 @@ export function createSalesforceClient({
   }
 
   async function sfJson(args) {
-    const { stdout } = await execute("sf", args, {
-      maxBuffer: 10 * 1024 * 1024,
-      timeout: timeoutMs,
-    });
-    const parsed = JSON.parse(stdout);
-    if (parsed.status !== 0) throw new Error("Salesforce CLI command failed.");
-    return parsed;
+    try {
+      const { stdout } = await execute("sf", args, {
+        maxBuffer: 10 * 1024 * 1024,
+        timeout: timeoutMs,
+      });
+      const parsed = JSON.parse(stdout);
+      if (parsed.status !== 0) throw new Error("Salesforce CLI command failed.");
+      return parsed;
+    } catch (error) {
+      error.commandArgs = args;
+      throw error;
+    }
   }
 
   async function rest(path, init = {}, retryOnUnauthorized = true) {
@@ -104,4 +110,14 @@ export function createSalesforceClient({
 
 function hasStaleTokenWarning(warnings) {
   return (warnings ?? []).some((warning) => /access token may be stale/i.test(String(warning)));
+}
+
+function isUnknownShowAccessTokenCommand(error) {
+  const output = `${error?.stdout ?? ""}\n${error?.stderr ?? ""}\n${error?.message ?? ""}`;
+  return /org auth show-access-token is not a sf command/i.test(output);
+}
+
+function displayAccessToken(value) {
+  const token = String(value ?? "");
+  return token && !token.includes("[REDACTED]") ? token : "";
 }
