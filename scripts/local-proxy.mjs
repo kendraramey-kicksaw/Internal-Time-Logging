@@ -4,6 +4,8 @@ import { createServer } from "node:http";
 import { resolve } from "node:path";
 import { promisify } from "node:util";
 
+import { createSalesforceClient } from "./salesforce-client.mjs";
+
 const execFileAsync = promisify(execFile);
 
 const TASKRAY_TIME_OBJECT = "TASKRAY__trTaskTime__c";
@@ -31,8 +33,13 @@ const orgAlias = process.env.SF_ORG_ALIAS ?? DEFAULT_ORG_ALIAS;
 const apiVersion = process.env.SALESFORCE_API_VERSION ?? DEFAULT_API_VERSION;
 const calendarFile = resolve(process.env.LOCAL_CALENDAR_EVENTS_FILE ?? ".local/calendar-events.json");
 
-let cachedOrg = null;
 let cachedUserId = null;
+const salesforceClient = createSalesforceClient({
+  orgAlias,
+  onUnauthorized: () => {
+    cachedUserId = null;
+  },
+});
 
 const server = createServer(async (request, response) => {
   if (!request.url) return sendJson(response, 400, { error: "Missing request URL." });
@@ -580,18 +587,7 @@ function isSalesforceId(value) {
 }
 
 async function getSalesforceOrg() {
-  if (cachedOrg) return cachedOrg;
-
-  const { stdout } = await execFileAsync("sf", ["org", "display", "--target-org", orgAlias, "--json"], {
-    maxBuffer: 10 * 1024 * 1024,
-  });
-  const parsed = JSON.parse(stdout);
-  if (parsed.status !== 0 || !parsed.result?.accessToken || !parsed.result?.instanceUrl) {
-    throw new Error(`Salesforce CLI org ${orgAlias} is not authenticated.`);
-  }
-
-  cachedOrg = parsed.result;
-  return cachedOrg;
+  return salesforceClient.getOrg();
 }
 
 async function getSalesforceUserId() {
@@ -608,22 +604,7 @@ async function getSalesforceUserId() {
 }
 
 async function salesforceRest(path, init = {}) {
-  const org = await getSalesforceOrg();
-  const response = await fetch(`${org.instanceUrl}${path}`, {
-    ...init,
-    headers: {
-      Authorization: `Bearer ${org.accessToken}`,
-      "Content-Type": "application/json",
-      ...(init.headers ?? {}),
-    },
-  });
-  const data = await response.json().catch(() => ({}));
-
-  if (!response.ok) {
-    throw new Error(data?.[0]?.message ?? data?.message ?? data?.error_description ?? "Salesforce request failed.");
-  }
-
-  return data;
+  return salesforceClient.rest(path, init);
 }
 
 async function readJsonBody(request) {

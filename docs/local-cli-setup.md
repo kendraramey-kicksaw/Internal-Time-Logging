@@ -20,7 +20,8 @@ technical reference.
 
 2. Install Node.js `22.13.0` or newer if needed.
 
-3. Install Salesforce CLI if needed:
+3. Install or update Salesforce CLI. The local proxy uses the current CLI's
+   `sf org auth show-access-token` command to obtain a refreshed local session:
 
    ```bash
    npm install --global @salesforce/cli
