@@ -343,11 +343,13 @@ async function normalizeLocalCalendarEvent(event, deliveryTeam) {
   const title = String(event.title ?? event.summary ?? "").trim();
   const eventDate = String(event.start ?? "").slice(0, 10);
   const project = await projectForCalendarEvent(event, deliveryTeam, eventDate);
+  const activityType = activityTypeForCalendarEvent(event, project);
 
   return {
     ...event,
     title,
     project,
+    activityType,
     billable: project.id !== INTERNAL_PROJECT.id && Boolean(event.billable ?? true),
   };
 }
@@ -489,6 +491,36 @@ function isInternalCalendarEvent(event) {
     title.includes("dj / kendra") ||
     title.includes("dj/kendra")
   );
+}
+
+function activityTypeForCalendarEvent(event, project = normalizeProject(event.project) ?? BLANK_PROJECT) {
+  if (project.id === INTERNAL_PROJECT.id || isInternalCalendarEvent(event)) return "People and Team Activities";
+  if (hasAttendeeData(event)) return workAttendeeCount(event) > 1 ? "Meeting" : "Coding and Configuration";
+  return validCalendarActivityType(event.activityType) ?? "Coding and Configuration";
+}
+
+function hasAttendeeData(event) {
+  return Array.isArray(event.attendees) || Array.isArray(event.attendeeEmails);
+}
+
+function workAttendeeCount(event) {
+  const attendees = Array.isArray(event.attendees)
+    ? event.attendees
+    : Array.isArray(event.attendeeEmails)
+      ? event.attendeeEmails.map((email) => ({ email }))
+      : [];
+
+  return attendees.filter((attendee) => !attendee.resource).length;
+}
+
+function validCalendarActivityType(value) {
+  return [
+    "Meeting",
+    "Coding and Configuration",
+    "People and Team Activities",
+  ].includes(value)
+    ? value
+    : null;
 }
 
 function externalAttendeeDomains(event) {

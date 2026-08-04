@@ -976,6 +976,7 @@ async function normalizeGoogleCalendarEvent(
     billable: classification.project.id !== INTERNAL_PROJECT.id,
     responseStatus: selfResponseStatus(event),
     transparency: event.transparency === "transparent" ? "transparent" : "opaque",
+    attendeeEmails: nonResourceAttendeeEmails(event),
   };
 }
 
@@ -1027,27 +1028,13 @@ async function classifyGoogleCalendarEvent(
     return { activityType: "People and Team Activities", project: INTERNAL_PROJECT };
   }
 
-  const looksLikeMeeting =
-    attendeeCount > 1 ||
-    title.includes("meeting") ||
-    title.includes("stand-up") ||
-    title.includes("standup") ||
-    title.includes("triage") ||
-    title.includes("sync") ||
-    title.includes("review") ||
-    title.includes("check-in") ||
-    title.includes("chat") ||
-    title.includes("call") ||
-    title.includes("huddle") ||
-    title.includes("1:1");
-
   const domains = externalAttendeeDomains(event);
   const project = connection && domains.length
     ? (await matchProjectByDomains(connection, domains, deliveryTeam, eventDate)) ?? BLANK_PROJECT
     : BLANK_PROJECT;
 
   return {
-    activityType: looksLikeMeeting ? "Meeting" : "Coding and Configuration",
+    activityType: attendeeCount > 1 ? "Meeting" : "Coding and Configuration",
     project,
   };
 }
@@ -1136,11 +1123,16 @@ function projectFromRecord(record: TaskRayProjectRecord): ProjectOption {
 }
 
 function externalAttendeeDomains(event: GoogleCalendarEvent) {
-  return Array.from(new Set((event.attendees ?? [])
-    .filter((attendee) => !attendee.resource)
-    .map((attendee) => attendee.email?.toLowerCase() ?? "")
+  return Array.from(new Set(nonResourceAttendeeEmails(event)
     .map((email) => normalizeDomain(email.split("@").at(-1) ?? ""))
     .filter((domain) => domain && domain !== "kicksaw.com")));
+}
+
+function nonResourceAttendeeEmails(event: GoogleCalendarEvent) {
+  return (event.attendees ?? [])
+    .filter((attendee) => !attendee.resource)
+    .map((attendee) => attendee.email?.toLowerCase() ?? "")
+    .filter(Boolean);
 }
 
 function websiteDomain(value?: string) {

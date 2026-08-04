@@ -105,10 +105,11 @@ type CalendarEvent = {
   start: string;
   end: string;
   project: Project;
-  activityType: "Meeting" | "Coding and Configuration" | "People and Team Activities";
+  activityType?: "Meeting" | "Coding and Configuration" | "People and Team Activities" | null;
   billable: boolean;
   responseStatus?: "accepted" | "declined" | null;
   transparency?: "opaque" | "transparent";
+  attendeeEmails?: string[];
 };
 
 type SortDirection = "asc" | "desc";
@@ -820,7 +821,7 @@ function sameProjectDomainOrAccount(leftProject: Project, rightProject: Project)
 
 function shouldDefaultCalendarProject(event: CalendarEvent, defaultProject: Project) {
   if (!defaultProject.idPricingStructure) return false;
-  if (event.activityType === "People and Team Activities") return false;
+  if (calendarActivityTypeForEvent(event) === "People and Team Activities") return false;
   if (event.project.id === INTERNAL_PROJECT.id || event.project.label.includes("Kicksaw")) return false;
   if (!event.project.idPricingStructure && !event.project.label.trim()) return true;
   return sameProjectDomainOrAccount(event.project, defaultProject);
@@ -848,14 +849,41 @@ function eventHours(event: CalendarEvent) {
 
 function shouldIgnoreCalendarEvent(event: CalendarEvent, includeUnacceptedMeetings: boolean) {
   const title = event.title.toLowerCase();
+  const activityType = calendarActivityTypeForEvent(event);
   return (
     event.responseStatus === "declined" ||
-    (!includeUnacceptedMeetings && event.activityType === "Meeting" && event.responseStatus !== "accepted") ||
+    (!includeUnacceptedMeetings && activityType === "Meeting" && event.responseStatus !== "accepted") ||
     event.transparency === "transparent" ||
     title.includes("focus time") ||
     title.includes("ooo") ||
     title.includes("out of office")
   );
+}
+
+function calendarActivityTypeForEvent(event: CalendarEvent) {
+  const title = event.title.toLowerCase();
+  const isInternal =
+    event.project.id === INTERNAL_PROJECT.id ||
+    event.project.label === INTERNAL_PROJECT.label ||
+    title.includes("all hands") ||
+    title.includes("team lunch") ||
+    title.includes("values in action") ||
+    title.includes("salesforce user group") ||
+    title.includes("delivery ai lounge") ||
+    title.includes("hangout") ||
+    title.includes("workshop") ||
+    title.includes("kendra / dj") ||
+    title.includes("kendra/dj") ||
+    title.includes("dj / kendra") ||
+    title.includes("dj/kendra");
+
+  if (isInternal) return "People and Team Activities";
+
+  if (Array.isArray(event.attendeeEmails)) {
+    return event.attendeeEmails.length > 1 ? "Meeting" : "Coding and Configuration";
+  }
+
+  return event.activityType ?? "Coding and Configuration";
 }
 
 function buildCalendarSuggestions(
@@ -867,13 +895,14 @@ function buildCalendarSuggestions(
   const grouped = new Map<string, { entry: TimeEntry; titles: Set<string> }>();
 
   for (const event of events) {
+    const activityType = calendarActivityTypeForEvent(event);
     const date = dateFromEvent(event);
     if (date < startDate || date > endDate || shouldIgnoreCalendarEvent(event, includeUnacceptedMeetings)) continue;
 
     const groupKey = [
       date,
       event.project.idPricingStructure,
-      event.activityType,
+      activityType,
       billableForProject(event.project, event.billable) ? "billable" : "nonbillable",
     ].join("|");
     const existing = grouped.get(groupKey);
@@ -884,7 +913,7 @@ function buildCalendarSuggestions(
       existing.entry.notes = Array.from(existing.titles).join(", ");
     } else {
       grouped.set(groupKey, {
-        entry: suggested(date, event.project, eventHours(event), event.billable, event.activityType, event.title),
+        entry: suggested(date, event.project, eventHours(event), event.billable, activityType, event.title),
         titles: new Set([event.title]),
       });
     }
@@ -1051,6 +1080,13 @@ function timeTypeForEntry(entry: Pick<TimeEntry, "projectValue" | "projectLabel"
 
 function categoryForEntry(entry: Pick<TimeEntry, "projectLabel">) {
   return entry.projectLabel.includes("Kicksaw") ? "Internal" : "";
+}
+
+function appUpdateMessageFor(status: AppUpdateStatus) {
+  if (status.dirty && status.updateAvailable) return "Update available, but local changes need to be saved first.";
+  if (status.dirty) return "App is up to date with local changes pending.";
+  if (status.updateAvailable) return "App is out of date";
+  return status.message ?? (status.local ? "App is up to date" : "Hosted deployment controls updates");
 }
 
 function compactPayloadRecord(entry: TimeEntry) {
@@ -1659,11 +1695,7 @@ export default function Home() {
 
       const status = body as AppUpdateStatus;
       setAppUpdateStatus(status);
-      setAppUpdateMessage(
-        status.updateAvailable
-          ? "App is out of date"
-          : status.message ?? (status.local ? "App is up to date" : "Hosted deployment controls updates"),
-      );
+      setAppUpdateMessage(appUpdateMessageFor(status));
     } catch (error) {
       setAppUpdateMessage(error instanceof Error ? error.message : "Update check failed.");
     }
