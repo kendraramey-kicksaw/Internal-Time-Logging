@@ -99,6 +99,8 @@ calendar file. Use the user's actual project folder path.
 Using my Google Calendar integration, fetch my primary calendar events for the full current calendar month using my current timezone.
 Write them to <PROJECT_FOLDER>/.local/calendar-events.json as JSON with a top-level "records" array.
 Each record must have: id, title, start, end, project, activityType, billable, responseStatus, transparency, and attendeeEmails.
+Use Google Calendar search only to find candidate events, then read or batch-read the full event details before writing the file.
+responseStatus must use my_response_status when available, or the response status for the attendee where is_self/self is true.
 attendeeEmails should include every non-resource attendee email when available so the app can match external client domains to active Salesforce projects for the selected Delivery Team.
 Exclude declined, Focus Time, OOO/out-of-office, transparent, birthday, and FYI events.
 Consolidate same-day calendar entries with the same title.

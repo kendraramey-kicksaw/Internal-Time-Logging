@@ -64,7 +64,7 @@ type SalesforceImportResponse = {
   createdCount?: number;
   error?: string;
   details?: SalesforceImportResult[];
-};
+} | SalesforceImportResult[];
 
 type AppUpdateStatus = {
   local: boolean;
@@ -107,7 +107,7 @@ type CalendarEvent = {
   project: Project;
   activityType?: "Meeting" | "Coding and Configuration" | "People and Team Activities" | null;
   billable: boolean;
-  responseStatus?: "accepted" | "declined" | null;
+  responseStatus?: "accepted" | "declined" | "needsAction" | null;
   transparency?: "opaque" | "transparent";
   attendeeEmails?: string[];
 };
@@ -140,8 +140,8 @@ type SalesforceColumnKey =
   | "notes"
   | "actions";
 
-const monthStart = "2026-07-01";
-const monthEnd = "2026-07-31";
+const monthStart = currentMonthStartIso();
+const monthEnd = currentMonthEndIso();
 const defaultSuggestionEnd = todayIso();
 const salesforceBaseUrl = "https://kicksaw.my.salesforce.com";
 const localProxyBaseUrl = "http://127.0.0.1:8789";
@@ -879,11 +879,30 @@ function calendarActivityTypeForEvent(event: CalendarEvent) {
 
   if (isInternal) return "People and Team Activities";
 
-  if (Array.isArray(event.attendeeEmails)) {
+  if (Array.isArray(event.attendeeEmails) && event.attendeeEmails.length > 0) {
     return event.attendeeEmails.length > 1 ? "Meeting" : "Coding and Configuration";
   }
 
+  if (titleLooksLikeCodingWorkBlock(title)) return "Coding and Configuration";
+
   return event.activityType ?? "Coding and Configuration";
+}
+
+function titleLooksLikeCodingWorkBlock(title: string) {
+  return [
+    "build -",
+    "data audit",
+    "data fix",
+    "deployment",
+    "deployments",
+    "gearset",
+    "manual load",
+    "migration troubleshooting",
+    "quote/opp",
+    "smoke testing",
+    "tickets",
+    "uat tickets",
+  ].some((keyword) => title.includes(keyword));
 }
 
 function buildCalendarSuggestions(
@@ -972,6 +991,16 @@ function todayIso() {
   }).format(new Date());
 }
 
+function currentMonthStartIso() {
+  const [year, month] = todayIso().split("-").map(Number);
+  return `${year}-${String(month).padStart(2, "0")}-01`;
+}
+
+function currentMonthEndIso() {
+  const [year, month] = todayIso().split("-").map(Number);
+  return new Date(Date.UTC(year, month, 0)).toISOString().slice(0, 10);
+}
+
 function addDaysIso(date: string, days: number) {
   const nextDate = new Date(`${date}T00:00:00Z`);
   nextDate.setUTCDate(nextDate.getUTCDate() + days);
@@ -991,7 +1020,7 @@ function weekStartIso(date: string) {
 
 function defaultSuggestionStartFor(entries: Pick<SalesforceTimeEntry, "date">[]) {
   const latestDate = latestSalesforceDate(entries);
-  return latestDate ? addDaysIso(latestDate, 1) : monthStart;
+  return latestDate >= monthStart && latestDate <= monthEnd ? addDaysIso(latestDate, 1) : monthStart;
 }
 
 function defaultSuggestionEndFor(startDate: string) {
@@ -1114,6 +1143,18 @@ function compactPayloadRecord(entry: TimeEntry) {
 
 function toSalesforcePayload(entries: TimeEntry[]) {
   return entries.map(compactPayloadRecord);
+}
+
+function salesforceImportResults(body: SalesforceImportResponse) {
+  return Array.isArray(body) ? body : body.records ?? [];
+}
+
+function salesforceImportError(body: SalesforceImportResponse) {
+  return Array.isArray(body) ? undefined : body.error;
+}
+
+function createdSalesforceIds(results: SalesforceImportResult[]) {
+  return results.filter((record) => record.success && record.id).map((record) => record.id as string);
 }
 
 function recordUrl(recordId: string) {
@@ -1656,6 +1697,8 @@ export default function Home() {
       `Write the result to ${calendarFile}.`,
       "Use JSON with a top-level \"records\" array.",
       "Each record must have: id, title, start, end, project, activityType, billable, responseStatus, transparency, and attendeeEmails.",
+      "Use Google Calendar search only to find candidate events, then read or batch-read the full event details before writing the file.",
+      "responseStatus must use my_response_status when available, or the response status for the attendee where is_self/self is true.",
       "attendeeEmails must include every non-resource attendee email when available so the app can match external client domains to active Salesforce projects for my selected Delivery Team.",
       "Use these calendar rules:",
       "- Exclude declined events.",
@@ -1793,9 +1836,11 @@ export default function Home() {
         setLiveSalesforceDefaultApplied(true);
       }
       setSalesforceSyncStatus("Salesforce live");
+      return records;
     } catch (error) {
-      if (error instanceof DOMException && error.name === "AbortError") return;
+      if (error instanceof DOMException && error.name === "AbortError") return null;
       setSalesforceSyncStatus(error instanceof Error ? error.message : "Salesforce refresh failed.");
+      return null;
     }
   }
 
@@ -1953,18 +1998,31 @@ export default function Home() {
       });
       const body = (await response.json()) as SalesforceImportResponse;
 
-      if (!response.ok) throw new Error(body.error ?? "Salesforce import failed.");
+      if (!response.ok) throw new Error(salesforceImportError(body) ?? "Salesforce import failed.");
 
+      const importResults = salesforceImportResults(body);
       const createdCount =
-        typeof body.createdCount === "number"
+        !Array.isArray(body) && typeof body.createdCount === "number"
           ? body.createdCount
-          : (body.records ?? []).filter((record) => record.success).length;
+          : importResults.filter((record) => record.success).length;
       if (createdCount !== payload.length) {
         throw new Error(`Salesforce confirmed ${createdCount} of ${payload.length} row${payload.length === 1 ? "" : "s"}.`);
       }
 
-      setImportStatus(`Imported ${createdCount} row${createdCount === 1 ? "" : "s"} to Salesforce.`);
-      await loadSalesforceRows();
+      const createdIds = createdSalesforceIds(importResults);
+      const refreshedRows = await loadSalesforceRows();
+      const createdNames =
+        refreshedRows
+          ?.filter((entry) => createdIds.includes(entry.recordId))
+          .map((entry) => entry.recordName)
+          .filter(Boolean) ?? [];
+      const createdReference = createdNames.length ? createdNames.join(", ") : createdIds.join(", ");
+      const createdSuffix = createdReference ? ` Created: ${createdReference}.` : "";
+      setImportStatus(
+        refreshedRows
+          ? `Imported ${createdCount} row${createdCount === 1 ? "" : "s"} to Salesforce.${createdSuffix}`
+          : `Imported ${createdCount} row${createdCount === 1 ? "" : "s"} to Salesforce, but Table 3 did not refresh.${createdSuffix}`,
+      );
     } catch (error) {
       setImportStatus(error instanceof Error ? error.message : "Salesforce import failed.");
     } finally {
@@ -1990,12 +2048,6 @@ export default function Home() {
         </div>
         <div className="header-actions">
           <div className="header-button-bar">
-            <button type="button" className="primary" onClick={importToSalesforce} disabled={isImporting}>
-              {isImporting ? "Importing..." : "Import to Salesforce"}
-            </button>
-            <button type="button" onClick={copyPayload}>
-              Copy Salesforce Payload
-            </button>
             <button type="button" onClick={loadAppUpdateStatus}>
               Check for Updates
             </button>
@@ -2009,7 +2061,6 @@ export default function Home() {
             </button>
           </div>
           <p className={appUpdateStatusClass()}>{appUpdateMessage}</p>
-          {importStatus ? <p className="action-status">{importStatus}</p> : null}
         </div>
       </header>
 
@@ -2164,7 +2215,6 @@ export default function Home() {
             <div className="section-messages" aria-live="polite">
               {calendarSyncStatus ? <p className={calendarStatusClass()}>{calendarSyncStatus}</p> : null}
               {projectSyncStatus ? <p className="sync-status">{projectSyncStatus}</p> : null}
-              {suggestedStatus ? <p className="table-status error">{suggestedStatus}</p> : null}
             </div>
           </div>
         </div>
@@ -2342,6 +2392,16 @@ export default function Home() {
             </tbody>
           </table>
         </div>
+        <div className="suggested-action-bar">
+          <button type="button" className="primary" onClick={importToSalesforce} disabled={isImporting}>
+            {isImporting ? "Importing..." : "Import to Salesforce"}
+          </button>
+          <button type="button" onClick={copyPayload}>
+            Copy Salesforce Payload
+          </button>
+        </div>
+        {suggestedStatus ? <p className="table-status error suggested-action-status">{suggestedStatus}</p> : null}
+        {importStatus ? <p className="action-status suggested-action-status">{importStatus}</p> : null}
       </section>
 
       <section className="panel">

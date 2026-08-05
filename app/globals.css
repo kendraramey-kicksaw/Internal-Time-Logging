@@ -662,6 +662,20 @@ h3 {
   white-space: nowrap;
 }
 
+.suggested-action-bar {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.suggested-action-status {
+  margin-top: 8px;
+  max-width: none;
+  text-align: center;
+}
+
 .team-filter {
   min-width: 0;
 }

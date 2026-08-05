@@ -494,13 +494,33 @@ function isInternalCalendarEvent(event) {
 }
 
 function activityTypeForCalendarEvent(event, project = normalizeProject(event.project) ?? BLANK_PROJECT) {
+  const title = String(event.title ?? event.summary ?? "").toLowerCase();
   if (project.id === INTERNAL_PROJECT.id || isInternalCalendarEvent(event)) return "People and Team Activities";
   if (hasAttendeeData(event)) return workAttendeeCount(event) > 1 ? "Meeting" : "Coding and Configuration";
+  if (titleLooksLikeCodingWorkBlock(title)) return "Coding and Configuration";
   return validCalendarActivityType(event.activityType) ?? "Coding and Configuration";
 }
 
+function titleLooksLikeCodingWorkBlock(title) {
+  return [
+    "build -",
+    "data audit",
+    "data fix",
+    "deployment",
+    "deployments",
+    "gearset",
+    "manual load",
+    "migration troubleshooting",
+    "quote/opp",
+    "smoke testing",
+    "tickets",
+    "uat tickets",
+  ].some((keyword) => title.includes(keyword));
+}
+
 function hasAttendeeData(event) {
-  return Array.isArray(event.attendees) || Array.isArray(event.attendeeEmails);
+  return (Array.isArray(event.attendees) && event.attendees.length > 0) ||
+    (Array.isArray(event.attendeeEmails) && event.attendeeEmails.length > 0);
 }
 
 function workAttendeeCount(event) {

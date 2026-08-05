@@ -55,14 +55,10 @@ test("server-renders the calendar time-entry workspace", async () => {
   assert.match(html, /Include unaccepted meetings/);
   assert.match(html, /Suggested entry rules/);
   assert.match(html, /Actions/);
-  assert.match(html, /Edit/);
-  assert.match(html, /Delete/);
   assert.match(html, /Add Entry/);
-  assert.match(html, /TIME-178790/);
-  assert.match(html, /Build -Deployments to PC/);
+  assert.match(html, /Refresh Salesforce/);
   assert.match(html, /Crisis24 - OnSolve Migration - \(SOPS\)/);
   assert.match(html, /Kicksaw - Internal Time Tracking/);
-  assert.match(html, /2026-07-11/);
   assert.doesNotMatch(html, /Read-only TaskRay Time rows are sorted/);
   assert.doesNotMatch(html, /OOO is no longer suggested as time/);
   assert.doesNotMatch(html, /Project source/);
